@@ -27,7 +27,6 @@ use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
 use windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
 use windows::Win32::Storage::FileSystem::OPEN_EXISTING;
 use windows::Win32::System::Ioctl::FSCTL_GET_NTFS_VOLUME_DATA;
-use windows::Win32::System::Ioctl::FSCTL_GET_RETRIEVAL_POINTERS;
 use windows::Win32::System::Ioctl::NTFS_VOLUME_DATA_BUFFER;
 use windows::Win32::System::Threading::GetCurrentProcess;
 use windows::Win32::System::Threading::OpenProcessToken;
@@ -146,39 +145,6 @@ impl Default for MftEntry {
     }
 }
 
-/// Structure for input to FSCTL_GET_RETRIEVAL_POINTERS
-#[repr(C)]
-struct STARTING_VCN_INPUT_BUFFER {
-    StartingVcn: u64,
-}
-
-/// Structure representing a Retrieval Pointer
-#[repr(C)]
-struct RetrievalPointer {
-    StartingLcn: u64,
-    ClusterCount: u64,
-}
-
-/// Structure representing the Retrieval Pointers Buffer
-#[repr(C)]
-struct RETRIEVAL_POINTERS_BUFFER_FULL {
-    StartingVcn: u64,
-    ExtentCount: u32,
-    _padding: u32,
-    Extents: [RetrievalPointer; 1], // Placeholder for dynamic array
-}
-
-impl RETRIEVAL_POINTERS_BUFFER_FULL {
-    /// Returns an iterator over the extents.
-    fn extents(&self) -> &[RetrievalPointer] {
-        unsafe {
-            let ptr = self.Extents.as_ptr();
-            let count = self.ExtentCount as usize;
-            std::slice::from_raw_parts(ptr, count)
-        }
-    }
-}
-
 /// Retrieves NTFS volume data.
 fn get_ntfs_volume_data(handle: HANDLE) -> Option<NTFS_VOLUME_DATA_BUFFER> {
     let mut ntfs_volume_data = NTFS_VOLUME_DATA_BUFFER::default();
@@ -188,7 +154,7 @@ fn get_ntfs_volume_data(handle: HANDLE) -> Option<NTFS_VOLUME_DATA_BUFFER> {
         DeviceIoControl(
             handle,
             FSCTL_GET_NTFS_VOLUME_DATA,
-            None,
+            Some(null_mut()),
             0,
             Some(&mut ntfs_volume_data as *mut _ as *mut _),
             size_of::<NTFS_VOLUME_DATA_BUFFER>() as u32,
@@ -207,62 +173,13 @@ fn get_ntfs_volume_data(handle: HANDLE) -> Option<NTFS_VOLUME_DATA_BUFFER> {
     }
 }
 
-/// Retrieves the physical cluster numbers for the MFT.
-fn get_mft_physical_location(handle: HANDLE, mft_start: u64) -> Option<Vec<u64>> {
-    // Define input buffer for FSCTL_GET_RETRIEVAL_POINTERS
-    let input = STARTING_VCN_INPUT_BUFFER {
-        StartingVcn: mft_start,
-    };
-
-    // Define output buffer. For simplicity, assume up to 5 extents.
-    let mut retrieval_buffer =
-        vec![0u8; size_of::<RETRIEVAL_POINTERS_BUFFER_FULL>() + size_of::<RetrievalPointer>() * 5];
-    let mut bytes_returned = 0u32;
-
-    let result = unsafe {
-        DeviceIoControl(
-            handle,
-            FSCTL_GET_RETRIEVAL_POINTERS,
-            Some(&input as *const _ as *const _),
-            size_of::<STARTING_VCN_INPUT_BUFFER>() as u32,
-            Some(retrieval_buffer.as_mut_ptr() as *mut _),
-            retrieval_buffer.len() as u32,
-            Some(&mut bytes_returned),
-            None,
-        )
-    };
-
-    if !result.as_bool() {
-        eprintln!(
-            "Failed to retrieve MFT physical location. Error: {:?}",
-            unsafe { GetLastError() }
-        );
-        return None;
-    }
-
-    // Now, parse the retrieval buffer
-    let retrieval_buffer_full_ptr =
-        retrieval_buffer.as_ptr() as *const RETRIEVAL_POINTERS_BUFFER_FULL;
-    let retrieval_buffer_full_struct = unsafe { &*retrieval_buffer_full_ptr };
-
-    let clusters: Vec<u64> = retrieval_buffer_full_struct
-        .extents()
-        .iter()
-        .map(|e| e.StartingLcn)
-        .collect();
-
-    Some(clusters)
-}
-
 /// Reads raw data from a specific cluster.
 fn read_raw_cluster(handle: HANDLE, cluster: u64, cluster_size: usize) -> Option<Vec<u8>> {
     let mut buffer = vec![0u8; cluster_size];
     let offset = cluster * cluster_size as u64;
 
     // Move the file pointer to the desired offset
-    let success = unsafe {
-        SetFilePointerEx(handle, offset as i64, None, FILE_BEGIN).as_bool()
-    };
+    let success = unsafe { SetFilePointerEx(handle, offset as i64, None, FILE_BEGIN).as_bool() };
 
     if !success {
         eprintln!("Failed to set file pointer. Error: {:?}", unsafe {
@@ -283,6 +200,7 @@ fn read_raw_cluster(handle: HANDLE, cluster: u64, cluster_size: usize) -> Option
     };
 
     if read_result.as_bool() {
+        buffer.truncate(bytes_read as usize);
         Some(buffer)
     } else {
         eprintln!("Failed to read raw cluster data. Error: {:?}", unsafe {
@@ -292,17 +210,17 @@ fn read_raw_cluster(handle: HANDLE, cluster: u64, cluster_size: usize) -> Option
     }
 }
 
-
 /// Parses MFT entries and prints their disk usage.
-fn parse_and_print_mft_entries(data: &[u8], count: usize) {
+fn parse_and_print_mft_entries(data: &[u8], count: usize, entry_size: usize) {
     for i in 0..count {
-        let offset = i * 1024; // Assuming 1 KB per MFT entry
-        if offset + 1024 > data.len() {
+        let offset = i * entry_size;
+        if offset + entry_size > data.len() {
             eprintln!("Insufficient data for MFT entry {}", i + 1);
             break;
         }
 
-        let entry_data = &data[offset..offset + 1024];
+        let entry_data = &data[offset..offset + entry_size];
+        println!("Interpreting entry data at offset {}...", offset);
         let entry = unsafe { &*(entry_data.as_ptr() as *const MftEntry) };
 
         // Verify MFT entry signature
@@ -357,24 +275,51 @@ fn main() {
             let bytes_per_cluster = volume_data.BytesPerCluster;
             let mft_start = volume_data.MftStartLcn as u64; // Cast from i64 to u64
 
+            // Calculate MFT record size based on ClustersPerFileRecordSegment
+            let mft_record_size = if (volume_data.ClustersPerFileRecordSegment as i32) < 0 {
+                2_u64.pow((-(volume_data.ClustersPerFileRecordSegment as i32)) as u32)
+            } else {
+                (volume_data.ClustersPerFileRecordSegment as u64) * (bytes_per_cluster as u64)
+            };
+            println!("MFT Record Size: {} bytes", mft_record_size);
+
             println!(
                 "Bytes per Cluster: {}, MFT Start LCN: {}",
                 bytes_per_cluster, mft_start
             );
 
-            // Calculate byte offset for MFT
-            let mft_offset = mft_start * bytes_per_cluster as u64;
-            println!("Calculated MFT byte offset: {}", mft_offset);
+            // Desired number of MFT entries to parse
+            let desired_entries = 5;
+            let total_bytes_needed = desired_entries as u64 * mft_record_size;
+            let bytes_per_cluster_u64 = bytes_per_cluster as u64;
+            let clusters_needed =
+                (total_bytes_needed + bytes_per_cluster_u64 - 1) / bytes_per_cluster_u64;
 
-            // Read the first cluster of the MFT
-            if let Some(mft_data) = read_raw_cluster(handle, mft_start, bytes_per_cluster as usize)
-            {
-                println!("Successfully read MFT cluster.");
+            println!(
+                "Reading {} clusters to cover {} MFT entries ({} bytes)...",
+                clusters_needed, desired_entries, total_bytes_needed
+            );
 
-                // Parse and print the first 5 MFT entries
-                println!("Parsing the first 5 MFT entries:");
-                parse_and_print_mft_entries(&mft_data, 5);
+            // Read the necessary number of clusters
+            let mut mft_data = Vec::new();
+            for cluster_index in 0..clusters_needed {
+                let cluster = mft_start + cluster_index;
+                println!("Reading cluster {}...", cluster);
+                if let Some(mut cluster_data) =
+                    read_raw_cluster(handle, cluster, bytes_per_cluster as usize)
+                {
+                    mft_data.append(&mut cluster_data);
+                } else {
+                    eprintln!("Failed to read cluster {}", cluster);
+                    break;
+                }
             }
+
+            println!("Successfully read {} bytes of MFT data.", mft_data.len());
+
+            // Parse and print the desired number of MFT entries
+            println!("Parsing the first {} MFT entries:", desired_entries);
+            parse_and_print_mft_entries(&mft_data, desired_entries, mft_record_size as usize);
         }
 
         // Close the handle when done
