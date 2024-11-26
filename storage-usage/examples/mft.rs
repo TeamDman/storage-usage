@@ -260,7 +260,9 @@ fn read_raw_cluster(handle: HANDLE, cluster: u64, cluster_size: usize) -> Option
     let offset = cluster * cluster_size as u64;
 
     // Move the file pointer to the desired offset
-    let success = unsafe { SetFilePointerEx(handle, offset as i64, None, FILE_BEGIN).as_bool() };
+    let success = unsafe {
+        SetFilePointerEx(handle, offset as i64, None, FILE_BEGIN).as_bool()
+    };
 
     if !success {
         eprintln!("Failed to set file pointer. Error: {:?}", unsafe {
@@ -289,6 +291,7 @@ fn read_raw_cluster(handle: HANDLE, cluster: u64, cluster_size: usize) -> Option
         None
     }
 }
+
 
 /// Parses MFT entries and prints their disk usage.
 fn parse_and_print_mft_entries(data: &[u8], count: usize) {
@@ -331,7 +334,7 @@ fn main() {
                 windows::Win32::Storage::FileSystem::FILE_SHARE_MODE(
                     FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0 | FILE_SHARE_DELETE.0,
                 ),
-                None,
+                Some(null_mut()),
                 OPEN_EXISTING,
                 FILE_ATTRIBUTE_NORMAL,
                 HANDLE::default(),
@@ -359,24 +362,18 @@ fn main() {
                 bytes_per_cluster, mft_start
             );
 
-            // Retrieve MFT physical location
-            if let Some(clusters) = get_mft_physical_location(handle, mft_start) {
-                println!("MFT located at clusters: {:?}", clusters);
+            // Calculate byte offset for MFT
+            let mft_offset = mft_start * bytes_per_cluster as u64;
+            println!("Calculated MFT byte offset: {}", mft_offset);
 
-                // For simplicity, read the first cluster containing the MFT
-                if let Some(first_cluster) = clusters.first() {
-                    println!("Reading MFT from cluster: {}", first_cluster);
+            // Read the first cluster of the MFT
+            if let Some(mft_data) = read_raw_cluster(handle, mft_start, bytes_per_cluster as usize)
+            {
+                println!("Successfully read MFT cluster.");
 
-                    if let Some(mft_data) =
-                        read_raw_cluster(handle, *first_cluster, bytes_per_cluster as usize)
-                    {
-                        println!("Successfully read MFT cluster.");
-
-                        // Parse and print the first 5 MFT entries
-                        println!("Parsing the first 5 MFT entries:");
-                        parse_and_print_mft_entries(&mft_data, 5);
-                    }
-                }
+                // Parse and print the first 5 MFT entries
+                println!("Parsing the first 5 MFT entries:");
+                parse_and_print_mft_entries(&mft_data, 5);
             }
         }
 
