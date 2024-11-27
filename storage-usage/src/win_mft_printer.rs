@@ -1,38 +1,15 @@
-use byte_unit::{Byte, Unit, UnitType};
-use mft::MftParser;
-use std::mem::size_of;
-use tracing::{debug, info, warn};
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::System::Ioctl::{FSCTL_GET_NTFS_VOLUME_DATA, NTFS_VOLUME_DATA_BUFFER};
-use windows::Win32::System::IO::DeviceIoControl;
-use eyre::eyre;
-
 use crate::win_handles::get_drive_handle;
+use crate::win_mft::display_mft_summary;
+use crate::win_mft::get_mft_buffer;
 use crate::win_paged_mft_reader::PagedMftReader;
-
-/// Retrieves the NTFS volume data buffer.
-pub fn get_mft_buffer(
-    drive_handle: HANDLE,
-) -> eyre::Result<NTFS_VOLUME_DATA_BUFFER, windows::core::Error> {
-    let mut volume_data = NTFS_VOLUME_DATA_BUFFER::default();
-    let mut bytes_read = 0;
-
-    unsafe {
-        DeviceIoControl(
-            drive_handle,
-            FSCTL_GET_NTFS_VOLUME_DATA,
-            None,
-            0,
-            Some(&mut volume_data as *mut _ as *mut _),
-            size_of::<NTFS_VOLUME_DATA_BUFFER>() as u32,
-            Some(&mut bytes_read),
-            None,
-        )
-        .ok()?
-    }
-    debug!("Read {} bytes of NTFS volume metadata", bytes_read);
-    Ok(volume_data)
-}
+use byte_unit::Byte;
+use byte_unit::Unit;
+use byte_unit::UnitType;
+use eyre::eyre;
+use mft::MftParser;
+use tracing::debug;
+use tracing::info;
+use tracing::warn;
 
 /// Reads and prints MFT data using PagedMftReader.
 pub fn get_and_print_mft_data() -> eyre::Result<()> {
@@ -43,6 +20,8 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     // Step 2: Retrieve NTFS volume data
     let volume_data = get_mft_buffer(handle)?;
     debug!("Volume data: {:#?}", volume_data);
+    display_mft_summary(&volume_data);
+    return Ok(())
 
     let bytes_per_cluster = volume_data.BytesPerCluster as u64;
 
@@ -69,10 +48,15 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     );
 
     // Step 4: Initialize PagedMftReader with desired buffer capacity (e.g., 10 MB)
-    let buffer_capacity = Byte::from_u64_with_unit(10, Unit::MiB)
+    let buffer_capacity = Byte::from_u64_with_unit(100, Unit::MiB)
         .expect("Failed to create Byte instance")
         .as_u64() as usize;
-    let mut paged_reader = PagedMftReader::new(handle, buffer_capacity, mft_start_offset, mft_valid_data_length);
+    let mut paged_reader = PagedMftReader::new(
+        handle,
+        buffer_capacity,
+        mft_start_offset,
+        mft_valid_data_length,
+    );
 
     // Step 5: Initialize MftParser with PagedMftReader
     let mut parser = MftParser::from_read_seek(paged_reader, Some(mft_valid_data_length))?;

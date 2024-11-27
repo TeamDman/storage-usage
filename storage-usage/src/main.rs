@@ -15,6 +15,7 @@ pub mod win_handles;
 pub mod win_mft_printer;
 pub mod win_paged_mft_reader;
 pub mod win_strings;
+pub mod win_mft;
 
 fn ensure_elevated() -> eyre::Result<()> {
     if !is_elevated() {
