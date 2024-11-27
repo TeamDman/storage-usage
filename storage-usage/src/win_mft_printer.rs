@@ -1,32 +1,14 @@
 use crate::win_handles::get_drive_handle;
 use crate::win_paged_mft_reader::PagedMftReader;
-use crate::win_strings::to_wide_null;
 use byte_unit::Byte;
 use byte_unit::Unit;
 use byte_unit::UnitType;
 use mft::MftParser;
-use std::io::Read;
-use std::io::Seek;
-use std::io::SeekFrom;
 use std::mem::size_of;
-use std::ops::Deref;
-use std::ptr::null_mut;
 use tracing::debug;
 use tracing::info;
 use tracing::warn;
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Storage::FileSystem::CreateFileW;
-use windows::Win32::Storage::FileSystem::ReadFile;
-use windows::Win32::Storage::FileSystem::SetFilePointerEx;
-use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::Storage::FileSystem::FILE_BEGIN;
-use windows::Win32::Storage::FileSystem::FILE_GENERIC_READ;
-use windows::Win32::Storage::FileSystem::FILE_SHARE_DELETE;
-use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
-use windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
-use windows::Win32::Storage::FileSystem::OPEN_EXISTING;
 use windows::Win32::System::Ioctl::FSCTL_GET_NTFS_VOLUME_DATA;
 use windows::Win32::System::Ioctl::NTFS_VOLUME_DATA_BUFFER;
 use windows::Win32::System::IO::DeviceIoControl;
@@ -68,8 +50,11 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     let bytes_per_cluster = volume_data.BytesPerCluster as u64;
 
     // Step 3: Calculate MFT record size correctly
+    // Apparently this can be negative but the mft lib is representing it as a u32
+    // so we are casting here and ignoring some warnings about silly comparisons
     let mft_record_size = volume_data.BytesPerFileRecordSegment as i32;
     #[allow(unused_comparisons)]
+    #[allow(clippy::absurd_extreme_comparisons)]
     let mft_record_size = if volume_data.BytesPerFileRecordSegment < 0 {
         2u64.pow(-mft_record_size as u32) as u64
     } else {
@@ -89,7 +74,7 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     let buffer_capacity = Byte::from_u64_with_unit(10, Unit::MiB)
         .expect("Failed to create Byte instance")
         .as_u64() as usize;
-    let mut paged_reader = PagedMftReader::new(handle, buffer_capacity, mft_start_offset);
+    let paged_reader = PagedMftReader::new(handle, buffer_capacity, mft_start_offset);
 
     // Step 5: Calculate total MFT size to read, capped by buffer_capacity
     let total_mft_size = mft_valid_data_length as usize;

@@ -1,33 +1,11 @@
-use crate::win_strings::to_wide_null;
-use byte_unit::Byte;
-use byte_unit::Unit;
-use byte_unit::UnitType;
-use mft::MftParser;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
-use std::mem::size_of;
-use std::ops::Deref;
-use std::ptr::null_mut;
 use tracing::debug;
-use tracing::info;
-use tracing::warn;
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Storage::FileSystem::CreateFileW;
 use windows::Win32::Storage::FileSystem::ReadFile;
 use windows::Win32::Storage::FileSystem::SetFilePointerEx;
-use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::Storage::FileSystem::FILE_BEGIN;
-use windows::Win32::Storage::FileSystem::FILE_GENERIC_READ;
-use windows::Win32::Storage::FileSystem::FILE_SHARE_DELETE;
-use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
-use windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
-use windows::Win32::Storage::FileSystem::OPEN_EXISTING;
-use windows::Win32::System::Ioctl::FSCTL_GET_NTFS_VOLUME_DATA;
-use windows::Win32::System::Ioctl::NTFS_VOLUME_DATA_BUFFER;
-use windows::Win32::System::IO::DeviceIoControl;
 
 /// A reader that paginates access to the MFT by reading in chunks.
 pub struct PagedMftReader {
@@ -124,7 +102,7 @@ impl Seek for PagedMftReader {
         // Calculate the new position based on SeekFrom
         let new_pos = match pos {
             SeekFrom::Start(offset) => offset,
-            SeekFrom::End(offset) => {
+            SeekFrom::End(_offset) => {
                 // To implement SeekFrom::End, you'd need to know the total size.
                 // For simplicity, let's return an error.
                 return Err(std::io::Error::new(

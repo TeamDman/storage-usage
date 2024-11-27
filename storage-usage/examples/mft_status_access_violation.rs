@@ -108,6 +108,7 @@ fn relaunch_as_admin() -> Result<windows::Win32::Foundation::HMODULE, windows::c
 
 /// Structure representing an MFT Entry (simplified for demonstration).
 #[repr(C)]
+#[derive(Default)]
 struct MftEntry {
     signature: [u8; 4], // Should be "FILE"
     fixup_offset: u16,
@@ -125,25 +126,6 @@ struct MftEntry {
     // Attributes would follow, but are omitted for simplicity
 }
 
-impl Default for MftEntry {
-    fn default() -> Self {
-        MftEntry {
-            signature: [0; 4],
-            fixup_offset: 0,
-            fixup_size: 0,
-            log_file_sequence_number: 0,
-            sequence_number: 0,
-            hard_link_count: 0,
-            first_attribute_offset: 0,
-            flags: 0,
-            used_size: 0,
-            allocated_size: 0,
-            file_reference_to_base: 0,
-            next_attribute_id: 0,
-            padding: [0; 2],
-        }
-    }
-}
 
 /// Retrieves NTFS volume data.
 fn get_ntfs_volume_data(handle: HANDLE) -> Option<NTFS_VOLUME_DATA_BUFFER> {
