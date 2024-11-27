@@ -65,7 +65,7 @@ pub fn wait_for_enter() {
 
 fn do_stuff() -> eyre::Result<()> {
     if let Err(e) = get_and_print_mft_data() {
-        error!("Failed to get and print MFT data: {}", e);
+        error!("Failed to get and print MFT data: {:#}", e);
         return Err(e);
     }
     Ok(())

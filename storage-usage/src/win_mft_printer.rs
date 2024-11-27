@@ -15,11 +15,11 @@ use tracing::warn;
 pub fn get_and_print_mft_data() -> eyre::Result<()> {
     // Step 1: Open the drive handle
     let drive_handle = get_drive_handle('C')?;
-    let handle = *drive_handle; // Deref to get HANDLE
+    // Deref to get HANDLE
 
     // Step 2: Retrieve NTFS volume data
-    let volume_data = get_mft_buffer(handle)?;
-    display_mft_summary(&volume_data);
+    let volume_data = get_mft_buffer(*drive_handle)?;
+    display_mft_summary(&drive_handle, &volume_data)?;
     return Ok(());
 
     let bytes_per_cluster = volume_data.BytesPerCluster as u64;
@@ -50,7 +50,7 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     let buffer_capacity = Byte::from_u64_with_unit(100, Unit::MiB)
         .expect("Failed to create Byte instance")
         .as_u64() as usize;
-    let mut paged_reader = PagedMftReader::new(handle, buffer_capacity, mft_start_offset, mft_valid_data_length);
+    let mut paged_reader = PagedMftReader::new(*drive_handle, buffer_capacity, mft_start_offset, mft_valid_data_length);
 
     // Step 5: Initialize MftParser with PagedMftReader
     let mut parser = MftParser::from_read_seek(paged_reader, Some(mft_valid_data_length))?;
