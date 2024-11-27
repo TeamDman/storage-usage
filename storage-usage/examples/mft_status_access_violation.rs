@@ -220,7 +220,7 @@ fn parse_and_print_mft_entries(data: &[u8], count: usize, entry_size: usize) {
         }
 
         let entry_data = &data[offset..offset + entry_size];
-        println!("Interpreting entry data at offset {}...", offset);
+        println!("Interpreting entry data at offset {}...", offset); // error: process didn't exit successfully: `target\debug\examples\mft.exe` (exit code: 0xc0000005, STATUS_ACCESS_VIOLATION)
         let entry = unsafe { &*(entry_data.as_ptr() as *const MftEntry) };
 
         // Verify MFT entry signature

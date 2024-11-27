@@ -1,82 +1,69 @@
-use std::ffi::OsString;
-use std::fs;
-use std::os::windows::ffi::OsStringExt;
-use windows::Win32::Foundation::GetLastError;
-use windows::Win32::Storage::FileSystem::GetLogicalDriveStringsW;
+use std::io::Write;
 
-fn main() {
-    // Buffer to hold drive strings (UTF-16 encoded)
-    let mut buffer = vec![0u16; 256];
+use elevation::is_elevated;
+use elevation::relaunch_as_admin;
+use eyre::eyre;
+use get_mft_windows::get_and_print_mft_data;
+use tracing::debug;
+use tracing::error;
+use tracing::info;
+use tracing::warn;
 
-    unsafe {
-        // Get the logical drive strings
-        let result = GetLogicalDriveStringsW(Some(&mut buffer));
+pub mod elevation;
+pub mod get_mft_windows;
+mod init;
+pub mod strings;
 
-        if result == 0 {
-            eprintln!("Failed to get logical drives. Error: {:?}", GetLastError());
-            return;
-        }
-
-        // Parse the buffer into individual drive strings
-        let drives = parse_drive_strings(&buffer[..result as usize]);
-
-        for drive in drives {
-            println!("Drive: {}", drive.to_string_lossy());
-
-            // Read the entries in the root of the drive
-            match fs::read_dir(&drive) {
-                Ok(entries) => {
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            let path = entry.path();
-
-                            // Get metadata to determine if it's a file or directory and get size
-                            match entry.metadata() {
-                                Ok(metadata) => {
-                                    if metadata.is_file() {
-                                        let size = metadata.len();
-                                        println!(" - {} (File, {} bytes)", path.display(), size);
-                                    } else if metadata.is_dir() {
-                                        // For directories, you can choose to calculate size recursively
-                                        println!(" - {} (Directory)", path.display());
-                                    } else {
-                                        println!(" - {} (Other)", path.display());
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Failed to get metadata for {}: {}", path.display(), e);
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Failed to read directory {}: {}",
-                        drive.to_string_lossy(),
-                        e
-                    );
-                }
+fn ensure_elevated() -> eyre::Result<()> {
+    if !is_elevated() {
+        warn!("Program needs to be ran with elevated privileges.");
+        info!("Relaunching as administrator");
+        match relaunch_as_admin() {
+            Ok(module) if module.0 as usize > 32 => {
+                info!("Successfully relaunched as administrator.");
+                std::process::exit(0); // Exit the current process
             }
-            println!(); // Add an empty line for readability
+            Ok(module) => {
+                return Err(eyre!(
+                    "Failed to relaunch as administrator. Error code: {}",
+                    module.0
+                ));
+            }
+            Err(e) => {
+                return Err(eyre!("Failed to relaunch as administrator: {}", e));
+            }
         }
     }
+    Ok(())
 }
 
-// Function to parse the buffer returned by GetLogicalDriveStringsW into a Vec of OsString
-fn parse_drive_strings(buffer: &[u16]) -> Vec<OsString> {
-    let mut drives = Vec::new();
-    let mut start = 0;
+fn main() -> eyre::Result<()> {
+    init::init()?;
+    debug!("Hi there!");
 
-    for (i, &c) in buffer.iter().enumerate() {
-        if c == 0 {
-            if start != i {
-                let os_string = OsString::from_wide(&buffer[start..i]);
-                drives.push(os_string);
-            }
-            start = i + 1;
-        }
+    ensure_elevated()?;
+    info!("Program is running with elevated privileges.");
+    let exit = match do_stuff() {
+        Ok(_) => 0,
+        Err(_) => 1,
+    };
+
+    info!("We have reached the end of the program.");
+    wait_for_enter();
+    std::process::exit(exit);
+}
+
+/// Waits for the user to press Enter.
+pub fn wait_for_enter() {
+    print!("Press Enter to exit...");
+    std::io::stdout().flush().unwrap(); // Ensure the prompt is displayed immediately
+    let _ = std::io::stdin().read_line(&mut String::new()); // Wait for user input
+}
+
+fn do_stuff() -> eyre::Result<()> {
+    if let Err(e) = get_and_print_mft_data() {
+        error!("Failed to get and print MFT data: {}", e);
+        return Err(e);
     }
-
-    drives
+    Ok(())
 }
