@@ -1,17 +1,14 @@
-use crate::win_handles::get_drive_handle;
-use crate::win_paged_mft_reader::PagedMftReader;
-use byte_unit::Byte;
-use byte_unit::Unit;
-use byte_unit::UnitType;
+use byte_unit::{Byte, Unit, UnitType};
 use mft::MftParser;
 use std::mem::size_of;
-use tracing::debug;
-use tracing::info;
-use tracing::warn;
+use tracing::{debug, info, warn};
 use windows::Win32::Foundation::HANDLE;
-use windows::Win32::System::Ioctl::FSCTL_GET_NTFS_VOLUME_DATA;
-use windows::Win32::System::Ioctl::NTFS_VOLUME_DATA_BUFFER;
+use windows::Win32::System::Ioctl::{FSCTL_GET_NTFS_VOLUME_DATA, NTFS_VOLUME_DATA_BUFFER};
 use windows::Win32::System::IO::DeviceIoControl;
+use eyre::eyre;
+
+use crate::win_handles::get_drive_handle;
+use crate::win_paged_mft_reader::PagedMftReader;
 
 /// Retrieves the NTFS volume data buffer.
 pub fn get_mft_buffer(
@@ -56,11 +53,12 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     #[allow(unused_comparisons)]
     #[allow(clippy::absurd_extreme_comparisons)]
     let mft_record_size = if volume_data.BytesPerFileRecordSegment < 0 {
+        warn!("Negative MFT record size: {}", mft_record_size);
         2u64.pow(-mft_record_size as u32) as u64
     } else {
         mft_record_size as u64
     };
-    debug!("MFT record size: {} bytes", mft_record_size);
+    info!("MFT record size: {}", mft_record_size);
 
     let mft_start_offset = volume_data.MftStartLcn as u64 * bytes_per_cluster;
     let mft_valid_data_length = volume_data.MftValidDataLength as u64;
@@ -74,14 +72,16 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     let buffer_capacity = Byte::from_u64_with_unit(10, Unit::MiB)
         .expect("Failed to create Byte instance")
         .as_u64() as usize;
-    let paged_reader = PagedMftReader::new(handle, buffer_capacity, mft_start_offset);
+    let mut paged_reader = PagedMftReader::new(handle, buffer_capacity, mft_start_offset, mft_valid_data_length);
 
-    // Step 5: Calculate total MFT size to read, capped by buffer_capacity
-    let total_mft_size = mft_valid_data_length as usize;
-    debug!("Total MFT size to read: {} bytes", total_mft_size);
+    // Step 5: Initialize MftParser with PagedMftReader
+    let mut parser = MftParser::from_read_seek(paged_reader, Some(mft_valid_data_length))?;
 
-    // Step 6: Initialize MftParser with PagedMftReader
-    let mut parser = MftParser::from_read_seek(paged_reader, Some(total_mft_size as u64))?;
+    // Step 6: Validate the first MFT entry
+    let first_entry = parser.get_entry(0)?;
+    if !first_entry.header.is_valid() {
+        return Err(eyre!("First MFT entry has an invalid signature"));
+    }
 
     // Step 7: Iterate over entries
     let mut invalid_count = 0;
@@ -125,7 +125,8 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
                 }
             },
             Err(err) => {
-                eprintln!("Error reading entry {}: {}", i + 1, err);
+                warn!("Error reading entry {}: {}", i + 1, err);
+                break;
             }
         }
     }

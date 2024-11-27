@@ -8,33 +8,41 @@ use windows::Win32::Storage::FileSystem::SetFilePointerEx;
 use windows::Win32::Storage::FileSystem::FILE_BEGIN;
 
 /// A reader that paginates access to the MFT by reading in chunks.
+/// It maps virtual positions (0..mft_valid_data_length) to physical disk positions (mft_start_offset..mft_start_offset + mft_valid_data_length).
 pub struct PagedMftReader {
     handle: HANDLE,
     buffer: Vec<u8>,
-    buffer_start: u64,      // Byte offset where the buffer starts in the MFT
-    buffer_end: u64,        // Byte offset where the buffer ends in the MFT
-    current_pos: u64,       // Current read position in the MFT
+    buffer_start: u64, // Virtual byte offset where the buffer starts in the MFT
+    buffer_end: u64,   // Virtual byte offset where the buffer ends in the MFT
+    current_pos: u64,  // Current virtual read position in the MFT
     buffer_capacity: usize, // Size of each buffer chunk
+    base_offset: u64,  // Physical disk byte offset where the MFT starts
+    total_size: u64,   // Total MFT size
 }
 
 impl PagedMftReader {
     /// Creates a new `PagedMftReader`.
-    pub fn new(handle: HANDLE, buffer_capacity: usize, starting_pos: u64) -> Self {
+    pub fn new(handle: HANDLE, buffer_capacity: usize, base_offset: u64, total_size: u64) -> Self {
         Self {
             handle,
             buffer: Vec::with_capacity(buffer_capacity),
             buffer_start: 0,
             buffer_end: 0,
-            current_pos: starting_pos,
+            current_pos: 0,
             buffer_capacity,
+            base_offset,
+            total_size,
         }
     }
 
     /// Fills the buffer starting from `current_pos`.
     fn fill_buffer(&mut self) -> std::io::Result<()> {
-        // Set file pointer to current_pos
+        // Calculate physical disk offset
+        let physical_offset = self.base_offset + self.current_pos;
+
+        // Set file pointer to physical_offset
         unsafe {
-            SetFilePointerEx(self.handle, self.current_pos as i64, None, FILE_BEGIN).ok()?;
+            SetFilePointerEx(self.handle, physical_offset as i64, None, FILE_BEGIN).ok()?;
         }
 
         // Clear the buffer and reserve space
@@ -60,7 +68,7 @@ impl PagedMftReader {
         self.buffer_end = self.current_pos + bytes_read as u64;
 
         debug!(
-            "Filled buffer: start={} end={} bytes_read={}",
+            "Filled buffer: virtual_start={} virtual_end={} bytes_read={}",
             self.buffer_start, self.buffer_end, bytes_read
         );
 
@@ -99,16 +107,17 @@ impl Read for PagedMftReader {
 
 impl Seek for PagedMftReader {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        // Calculate the new position based on SeekFrom
+        // Calculate the new virtual position based on SeekFrom
         let new_pos = match pos {
             SeekFrom::Start(offset) => offset,
-            SeekFrom::End(_offset) => {
-                // To implement SeekFrom::End, you'd need to know the total size.
-                // For simplicity, let's return an error.
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Unsupported,
-                    "SeekFrom::End is not supported",
-                ));
+            SeekFrom::End(offset) => {
+                let pos = self
+                    .total_size
+                    .checked_add(offset as i64 as u64)
+                    .ok_or_else(|| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Seek overflow")
+                    })?;
+                pos
             }
             SeekFrom::Current(offset) => {
                 if offset >= 0 {
@@ -130,6 +139,14 @@ impl Seek for PagedMftReader {
                 }
             }
         };
+
+        // Ensure new_pos is within total_size
+        if new_pos > self.total_size {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Seek position out of bounds",
+            ));
+        }
 
         // Update current_pos
         self.current_pos = new_pos;
