@@ -1,8 +1,12 @@
+use byte_unit::Byte;
+use byte_unit::Unit;
+use byte_unit::UnitType;
 use mft::MftParser;
 use std::mem::size_of;
 use std::ops::Deref;
 use std::ptr::null_mut;
 use tracing::debug;
+use tracing::info;
 use tracing::warn;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::CloseHandle;
@@ -99,17 +103,11 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
 
     let bytes_per_cluster = volume_data.BytesPerCluster as u64;
     let mft_start_offset = volume_data.MftStartLcn as u64 * bytes_per_cluster;
-    let mft_record_size = volume_data.BytesPerFileRecordSegment as u64;
     let mft_valid_data_length = volume_data.MftValidDataLength as u64;
 
-    debug!("Bytes per cluster: {}", bytes_per_cluster);
-    debug!("MFT start offset: {}", mft_start_offset);
-    debug!("MFT record size: {}", mft_record_size);
-    debug!("MFT valid data length: {}", mft_valid_data_length);
-
     // Set a maximum MFT size to read (e.g., 10 MB for testing)
-    let max_mft_size = 10 * 1024 * 1024; // 10 MB
-    let mft_read_size = std::cmp::min(mft_valid_data_length as usize, max_mft_size);
+    let max_mft_size = Byte::from_u64_with_unit(1, Unit::GiB).unwrap();
+    let mft_read_size = std::cmp::min(mft_valid_data_length as usize, max_mft_size.as_u64() as usize);
 
     debug!("Reading {} bytes from MFT", mft_read_size);
 
@@ -141,19 +139,51 @@ pub fn get_and_print_mft_data() -> eyre::Result<()> {
     let mut parser = MftParser::from_buffer(mft_data)?;
 
     // Iterate over entries
-    for entry in parser.iter_entries().take(5) {
+    let mut invalid_count = 0;
+    let mut total_logical = 0;
+    let mut total_physical = 0;
+    let mut total_entries = 0;
+    for (i, entry) in parser.iter_entries().enumerate() {
+        total_entries += 1;
+        let should_log = i < 100 || i % 100 == 0;
         match entry {
-            Ok(e) => {
-                println!("Entry: {:?}", e.header);
-                if !e.header.is_valid() {
-                    warn!("Entry is not valid");
-                }
+            Ok(e) if !e.header.is_valid() => {
+                invalid_count += 1;
             }
+            Ok(e) => match e.find_best_name_attribute() {
+                Some(x) => {
+                    if e.is_dir() {
+                        if should_log {
+                            info!("Found dir {}", x.name);
+                        }
+                    } else {
+                        total_logical += x.logical_size;
+                        total_physical += x.physical_size;
+                        if should_log {
+                            info!(
+                                "Found {} (physical={:#}, logical={:#})",
+                                x.name,
+                                Byte::from_u64(x.physical_size),
+                                Byte::from_u64(x.logical_size)
+                            );
+                        }
+                    }
+                }
+                None => {
+                    // warn!("Bruh {:?}", e.header);
+                }
+            },
             Err(err) => {
                 eprintln!("Error reading entry: {}", err);
             }
         }
     }
+    if invalid_count > 0 {
+        warn!("Found {} invalid entries", invalid_count);
+    }
+    info!("Total entries: {}", total_entries);
+    info!("Total logical size: {:#.2}", Byte::from_u64(total_logical).get_appropriate_unit(UnitType::Binary));
+    info!("Total physical size: {:#.2}", Byte::from_u64(total_physical).get_appropriate_unit(UnitType::Binary));
 
     Ok(())
 }

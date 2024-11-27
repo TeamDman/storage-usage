@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+byte-unit = "5.1.6"
 color-eyre = "0.6.3"
 eyre = { version = "0.6.12", default-features = false, features = ["auto-install", "track-caller"] }
 itertools = "0.13.0"

@@ -1,7 +1,6 @@
 use itertools::Itertools;
-use tracing::{debug, level_filters::LevelFilter};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
-
 
 /// Some common stuff I frequently use across projects.
 pub fn init() -> eyre::Result<()> {
@@ -16,7 +15,6 @@ pub fn init() -> eyre::Result<()> {
 
     Ok(())
 }
-
 
 #[cfg(windows)]
 mod windows_ansi {
