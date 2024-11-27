@@ -92,7 +92,7 @@ pub fn display_mft_summary(
 
     info!("Our printout");
 
-    //   NTFS Volume Serial Number :        0x1200a76500a74f13
+    //   NTFS Volume Serial Number :        0x123123123
     println!(
         "NTFS Volume Serial Number :        0x{:016x}",
         volume_data.VolumeSerialNumber
@@ -245,7 +245,7 @@ pub fn display_mft_summary(
         extended_data.MaxVolumeTrimByteCount
     );
 
-    //   Resource Manager Identifier :      A6CB503B-1E31-11EB-9937-D21D0BA6324B
+    //   Resource Manager Identifier :      00000000-0000-0000-0000-000000000000
     println!(
         "Resource Manager Identifier :      {}",
         uuid_to_string(*resource_manager_identifier)
