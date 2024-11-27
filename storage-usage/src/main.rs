@@ -1,18 +1,20 @@
 use std::io::Write;
 
-use elevation::is_elevated;
-use elevation::relaunch_as_admin;
+use win_elevation::is_elevated;
+use win_elevation::relaunch_as_admin;
 use eyre::eyre;
-use get_mft_windows::get_and_print_mft_data;
+use win_mft_printer::get_and_print_mft_data;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
 
-pub mod elevation;
-pub mod get_mft_windows;
+pub mod win_elevation;
+pub mod win_mft_printer;
 mod init;
-pub mod strings;
+pub mod win_strings;
+pub mod win_paged_mft_reader;
+pub mod win_handles;
 
 fn ensure_elevated() -> eyre::Result<()> {
     if !is_elevated() {

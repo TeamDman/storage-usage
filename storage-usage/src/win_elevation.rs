@@ -13,7 +13,7 @@ use windows::Win32::System::Threading::OpenProcessToken;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-use crate::strings::to_wide_null;
+use crate::win_strings::to_wide_null;
 
 /// Checks if the current process is running with elevated privileges.
 pub fn is_elevated() -> bool {
