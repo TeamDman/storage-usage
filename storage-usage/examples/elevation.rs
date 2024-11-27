@@ -1,15 +1,21 @@
 use std::env;
 use std::ffi::OsStr;
-use std::io::{self, Write};
+use std::io::Write;
+use std::io::{self};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
-use windows::Win32::Foundation::{HANDLE, HWND, HMODULE};
-use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION};
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Foundation::HMODULE;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Security::GetTokenInformation;
+use windows::Win32::Security::TokenElevation;
+use windows::Win32::Security::TOKEN_ELEVATION;
 use windows::Win32::Security::TOKEN_QUERY;
-use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows::Win32::System::Threading::GetCurrentProcess;
+use windows::Win32::System::Threading::OpenProcessToken;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-use windows::core::PCWSTR;
 
 /// Converts a Rust `&str` to a null-terminated wide string (`Vec<u16>`).
 fn to_wide_null(s: &str) -> Vec<u16> {
@@ -58,7 +64,7 @@ fn relaunch_as_admin() -> Result<HMODULE, windows::core::Error> {
     let operation = to_wide_null("runas");
     let file = to_wide_null(&exe_path_str);
     let params = to_wide_null(""); // No parameters
-    let dir = to_wide_null("");     // Current directory
+    let dir = to_wide_null(""); // Current directory
 
     // Call ShellExecuteW
     let result = unsafe {
@@ -90,7 +96,7 @@ fn wait_for_enter() {
 fn main() {
     if is_elevated() {
         println!("Program is running with elevated privileges.");
-        
+
         // Place your volume analysis code here.
 
         // Wait for Enter key before exiting
@@ -104,7 +110,10 @@ fn main() {
                 std::process::exit(0); // Exit the current process
             }
             Ok(module) => {
-                eprintln!("Failed to relaunch as administrator. Error code: {}", module.0);
+                eprintln!(
+                    "Failed to relaunch as administrator. Error code: {}",
+                    module.0
+                );
             }
             Err(e) => {
                 eprintln!("Failed to relaunch as administrator: {}", e);

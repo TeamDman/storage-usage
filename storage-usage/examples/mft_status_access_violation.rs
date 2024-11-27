@@ -126,7 +126,6 @@ struct MftEntry {
     // Attributes would follow, but are omitted for simplicity
 }
 
-
 /// Retrieves NTFS volume data.
 fn get_ntfs_volume_data(handle: HANDLE) -> Option<NTFS_VOLUME_DATA_BUFFER> {
     let mut ntfs_volume_data = NTFS_VOLUME_DATA_BUFFER::default();

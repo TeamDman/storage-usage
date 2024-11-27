@@ -28,7 +28,10 @@ fn main() {
     let handle = match handle {
         Ok(handle) => handle,
         Err(err) => {
-            eprintln!("Failed to open volume handle, did you forget to elevate? -- {}", err);
+            eprintln!(
+                "Failed to open volume handle, did you forget to elevate? -- {}",
+                err
+            );
             return;
         }
     };

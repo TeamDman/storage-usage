@@ -44,7 +44,11 @@ fn main() {
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("Failed to get metadata for {}: {}", path.display(), e);
+                                    eprintln!(
+                                        "Failed to get metadata for {}: {}",
+                                        path.display(),
+                                        e
+                                    );
                                 }
                             }
                         }
