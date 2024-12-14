@@ -1,0 +1,11 @@
+[package]
+name = "steam-games"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.39"
+color-eyre = "0.6.3"
+eyre = "0.6.12"
+keyvalues-serde = "0.2.1"
+serde = { version = "1.0.216", features = ["derive"] }
