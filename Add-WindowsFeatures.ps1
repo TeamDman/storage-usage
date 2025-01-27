@@ -1,0 +1,1 @@
+cargo add windows --features $(cargo build 2>&1 | rg "the item is gated behind" | % { ($_ -split "``")[1] } | Select-Object -Unique)
