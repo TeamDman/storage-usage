@@ -1,11 +1,12 @@
 use clap::Args;
+use crate::to_args::ToArgs;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 #[derive(Args, Clone)]
 pub struct MftDumpArgs {
     pub output_path: PathBuf,
-
+    
     #[clap(long, help = "Overwrite existing output file")]
     pub overwrite_existing: bool,
 }
@@ -16,17 +17,13 @@ impl MftDumpArgs {
     }
 }
 
-impl crate::elevation_commands::ToArgs for MftDumpArgs {
+impl ToArgs for MftDumpArgs {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, args: &mut Vec<OsString>) {
         args.push(self.output_path.as_os_str().into());
         if self.overwrite_existing {
             args.push("--overwrite-existing".into());
         }
+        args
     }
 }

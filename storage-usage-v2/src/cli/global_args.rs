@@ -1,4 +1,5 @@
 use clap::Args;
+use crate::to_args::ToArgs;
 use std::ffi::OsString;
 
 #[derive(Args, Default)]
@@ -18,16 +19,12 @@ impl GlobalArgs {
     }
 }
 
-impl crate::elevation_commands::ToArgs for GlobalArgs {
+impl ToArgs for GlobalArgs {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, args: &mut Vec<OsString>) {
         if self.debug {
             args.push("--debug".into());
         }
+        args
     }
 }

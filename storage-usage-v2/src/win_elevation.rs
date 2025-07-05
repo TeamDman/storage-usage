@@ -84,16 +84,14 @@ pub fn relaunch_as_admin() -> Result<windows::Win32::Foundation::HINSTANCE, wind
 
 /// Relaunches the current executable with administrative privileges using a specific CLI configuration.
 pub fn relaunch_as_admin_with_cli(
-    cli: &crate::cli::Cli,
+    args_provider: &impl crate::to_args::ToArgs,
 ) -> Result<windows::Win32::Foundation::HINSTANCE, windows::core::Error> {
-    use crate::elevation_commands::ToArgs;
-
     // Get the path to the current executable
     let exe_path = env::current_exe().expect("Failed to get current executable path");
     let exe_path_str = exe_path.to_string_lossy();
 
     // Convert CLI to arguments
-    let args = cli.to_args();
+    let args = args_provider.to_args();
     let args_str = args
         .iter()
         .map(|arg| arg.to_string_lossy())

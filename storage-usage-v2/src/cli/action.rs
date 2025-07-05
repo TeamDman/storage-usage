@@ -1,5 +1,6 @@
 use crate::cli::elevation_action::ElevationArgs;
 use crate::cli::mft_action::MftArgs;
+use crate::to_args::ToArgs;
 use clap::Subcommand;
 use std::ffi::OsString;
 
@@ -18,23 +19,19 @@ impl Action {
     }
 }
 
-impl crate::elevation_commands::ToArgs for Action {
+impl ToArgs for Action {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, args: &mut Vec<OsString>) {
         match self {
             Action::Mft(mft_args) => {
                 args.push("mft".into());
-                mft_args.add_args(args);
+                args.extend(mft_args.to_args());
             }
             Action::Elevation(elevation_args) => {
                 args.push("elevation".into());
-                elevation_args.add_args(args);
+                args.extend(elevation_args.to_args());
             }
         }
+        args
     }
 }

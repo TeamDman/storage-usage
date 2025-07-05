@@ -1,4 +1,5 @@
 use crate::cli::mft_dump_action::MftDumpArgs;
+use crate::to_args::ToArgs;
 use clap::Args;
 use clap::Subcommand;
 use std::ffi::OsString;
@@ -15,15 +16,9 @@ impl MftArgs {
     }
 }
 
-impl crate::elevation_commands::ToArgs for MftArgs {
+impl ToArgs for MftArgs {
     fn to_args(&self) -> Vec<OsString> {
-        let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, args: &mut Vec<OsString>) {
-        self.action.add_args(args);
+        self.action.to_args()
     }
 }
 
@@ -40,19 +35,15 @@ impl MftAction {
     }
 }
 
-impl crate::elevation_commands::ToArgs for MftAction {
+impl ToArgs for MftAction {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, args: &mut Vec<OsString>) {
         match self {
             MftAction::Dump(dump_args) => {
                 args.push("dump".into());
-                dump_args.add_args(args);
+                args.extend(dump_args.to_args());
             }
         }
+        args
     }
 }

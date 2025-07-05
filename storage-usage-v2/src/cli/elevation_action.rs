@@ -1,5 +1,8 @@
 use clap::Args;
 use clap::Subcommand;
+use crate::cli::elevation_check_action::ElevationCheckArgs;
+use crate::cli::elevation_test_action::ElevationTestArgs;
+use crate::to_args::ToArgs;
 use std::ffi::OsString;
 
 #[derive(Args)]
@@ -14,15 +17,9 @@ impl ElevationArgs {
     }
 }
 
-impl crate::elevation_commands::ToArgs for ElevationArgs {
+impl ToArgs for ElevationArgs {
     fn to_args(&self) -> Vec<OsString> {
-        let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, args: &mut Vec<OsString>) {
-        self.action.add_args(args);
+        self.action.to_args()
     }
 }
 
@@ -41,65 +38,19 @@ impl ElevationAction {
     }
 }
 
-impl crate::elevation_commands::ToArgs for ElevationAction {
+impl ToArgs for ElevationAction {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, args: &mut Vec<OsString>) {
         match self {
             ElevationAction::Check(check_args) => {
                 args.push("check".into());
-                check_args.add_args(args);
+                args.extend(check_args.to_args());
             }
             ElevationAction::Test(test_args) => {
                 args.push("test".into());
-                test_args.add_args(args);
+                args.extend(test_args.to_args());
             }
         }
-    }
-}
-
-#[derive(Args, Clone)]
-pub struct ElevationCheckArgs {}
-
-impl ElevationCheckArgs {
-    pub fn run(self) -> eyre::Result<()> {
-        crate::elevation_commands::check_elevation()
-    }
-}
-
-impl crate::elevation_commands::ToArgs for ElevationCheckArgs {
-    fn to_args(&self) -> Vec<OsString> {
-        let mut args = Vec::new();
-        self.add_args(&mut args);
         args
-    }
-
-    fn add_args(&self, _args: &mut Vec<OsString>) {
-        // No additional args for check command
-    }
-}
-
-#[derive(Args, Clone)]
-pub struct ElevationTestArgs {}
-
-impl ElevationTestArgs {
-    pub fn run(self) -> eyre::Result<()> {
-        crate::elevation_commands::test_elevation()
-    }
-}
-
-impl crate::elevation_commands::ToArgs for ElevationTestArgs {
-    fn to_args(&self) -> Vec<OsString> {
-        let mut args = Vec::new();
-        self.add_args(&mut args);
-        args
-    }
-
-    fn add_args(&self, _args: &mut Vec<OsString>) {
-        // No additional args for test command
     }
 }
