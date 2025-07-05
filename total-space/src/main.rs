@@ -5,14 +5,17 @@ use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Gauge;
 use ratatui::widgets::Widget;
+use ratatui::text::{Line, Span};
 use uom::si::f64::Information;
 use uom::si::information::byte;
 use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 use windows::Win32::Storage::FileSystem::GetVolumeInformationW;
 use windows::core::PCWSTR;
+use std::time::{Duration, Instant};
 
 const MAX_PATH: usize = 260;
 
+#[derive(Clone)]
 struct DriveInfo {
     letter: String,
     label: String,
@@ -49,9 +52,16 @@ fn get_drive_info(drive_letter: &str) -> eyre::Result<DriveInfo> {
             None,
         );
     }
-    let label = String::from_utf16_lossy(
-        &volume_name[..volume_name.iter().position(|&c| c == 0).unwrap_or(0)],
-    );
+    let label = {
+        let raw = String::from_utf16_lossy(
+            &volume_name[..volume_name.iter().position(|&c| c == 0).unwrap_or(0)],
+        );
+        if raw.trim().is_empty() {
+            "Local Disk".to_string()
+        } else {
+            raw
+        }
+    };
     Ok(DriveInfo {
         letter: drive_letter.to_string(),
         label,
@@ -78,9 +88,18 @@ fn gauge_color(free: &Information, total: &Information) -> Color {
 
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
+    let mut drive_snapshots: Vec<Vec<DriveInfo>> = Vec::new();
     let mut drives = get_all_drives()?;
+    drive_snapshots.push(drives.clone());
     let mut terminal = ratatui::init();
+    let mut last_refresh = Instant::now();
     loop {
+        // Refresh every 1 second
+        if last_refresh.elapsed() >= Duration::from_secs(1) {
+            drives = get_all_drives()?;
+            drive_snapshots.push(drives.clone());
+            last_refresh = Instant::now();
+        }
         let total_space = drives.iter().map(|d| d.total).sum::<Information>();
         let total_free = drives.iter().map(|d| d.free).sum::<Information>();
         let total_used = total_space - total_free;
@@ -104,13 +123,40 @@ fn main() -> eyre::Result<()> {
             for (i, drive) in drives.iter().enumerate() {
                 let used = drive.total - drive.free;
                 let ratio = used.get::<byte>() / drive.total.get::<byte>().max(1.0);
-                let label = format!(
-                    "{} [{}]: {} / {}",
-                    drive.letter,
-                    drive.label,
-                    format_size(used.get::<byte>() as u64, DECIMAL),
-                    format_size(drive.total.get::<byte>() as u64, DECIMAL)
-                );
+                // Delta calculation
+                let delta_span = if let (Some(first), Some(last)) = (
+                    drive_snapshots.first().and_then(|snap| snap.get(i)),
+                    drive_snapshots.last().and_then(|snap| snap.get(i)),
+                ) {
+                    let delta = last.free.get::<byte>() - first.free.get::<byte>();
+                    if delta == 0.0 {
+                        Span::raw("")
+                    } else {
+                        let (sign, color, abs_delta) = if delta < 0.0 {
+                            ("-", Color::Red, -delta)
+                        } else {
+                            ("+", Color::Green, delta)
+                        };
+                        let human = format_size(abs_delta as u64, DECIMAL);
+                        Span::styled(format!(" ({} {})", sign, human), Style::default().fg(color))
+                    }
+                } else {
+                    Span::raw("")
+                };
+                let label = Line::from(vec![
+                    Span::raw(format!(
+                        "{} [{}]: {} / {}",
+                        drive.letter,
+                        drive.label,
+                        format_size(used.get::<byte>() as u64, DECIMAL),
+                        format_size(drive.total.get::<byte>() as u64, DECIMAL)
+                    )),
+                    Span::styled(
+                        format!(" ({} free)", format_size(drive.free.get::<byte>() as u64, DECIMAL)),
+                        Style::default().fg(Color::Magenta),
+                    ),
+                    delta_span,
+                ]);
                 Gauge::default()
                     .block(Block::default().title(label).borders(Borders::ALL))
                     .gauge_style(Style::default().fg(gauge_color(&drive.free, &drive.total)))
@@ -131,7 +177,7 @@ fn main() -> eyre::Result<()> {
         })?;
         // Keyboard event handler
         use ratatui::crossterm::event::{self, Event, KeyCode};
-        if event::poll(std::time::Duration::from_millis(200))? {
+        if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => {
@@ -139,6 +185,8 @@ fn main() -> eyre::Result<()> {
                     }
                     KeyCode::Char('r') => {
                         drives = get_all_drives()?;
+                        drive_snapshots.push(drives.clone());
+                        last_refresh = Instant::now();
                     }
                     _ => {}
                 }
