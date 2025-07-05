@@ -1,7 +1,7 @@
-use crate::win_strings::to_wide_null;
+use crate::win_strings::EasyPCWSTR;
+use eyre::Context;
 use std::ops::Deref;
 use std::ptr::null_mut;
-use tracing::warn;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::CreateFileW;
@@ -11,7 +11,6 @@ use windows::Win32::Storage::FileSystem::FILE_SHARE_DELETE;
 use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
 use windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
 use windows::Win32::Storage::FileSystem::OPEN_EXISTING;
-use windows::core::PCWSTR;
 
 /// Auto-closing handle wrapper
 pub struct AutoClosingHandle(HANDLE);
@@ -30,12 +29,11 @@ impl Drop for AutoClosingHandle {
 }
 
 /// Opens a handle to the specified drive.
-pub fn get_drive_handle(drive_letter: char) -> Result<AutoClosingHandle, windows::core::Error> {
+pub fn get_drive_handle(drive_letter: char) -> eyre::Result<AutoClosingHandle> {
     let drive_path = format!("\\\\.\\{}:", drive_letter);
-    let drive_path = to_wide_null(&drive_path);
     let handle = unsafe {
         CreateFileW(
-            PCWSTR(drive_path.as_ptr()),
+            drive_path.easy_pcwstr()?.as_ref(),
             FILE_GENERIC_READ.0,
             windows::Win32::Storage::FileSystem::FILE_SHARE_MODE(
                 FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0 | FILE_SHARE_DELETE.0,
@@ -45,17 +43,10 @@ pub fn get_drive_handle(drive_letter: char) -> Result<AutoClosingHandle, windows
             FILE_ATTRIBUTE_NORMAL,
             Some(HANDLE::default()),
         )
-    };
-
-    let handle = match handle {
-        Ok(handle) => handle,
-        Err(err) => {
-            warn!(
-                "Failed to open volume handle, did you forget to elevate? -- {}",
-                err
-            );
-            return Err(err);
-        }
+        .wrap_err(format!(
+            "Failed to open volume handle for {:?}, did you forget to elevate?",
+            drive_letter
+        ))?
     };
 
     Ok(AutoClosingHandle(handle))

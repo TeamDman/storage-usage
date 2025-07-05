@@ -18,39 +18,37 @@ pub struct ElevationTestArgs {}
 
 impl ElevationTestArgs {
     pub fn run(self) -> eyre::Result<()> {
-        {
-            if is_elevated() {
-                info!("Already running as elevated, elevation test successful!");
-                return Ok(());
+        if is_elevated() {
+            info!("Already running as elevated, elevation test successful!");
+            return Ok(());
+        }
+
+        warn!("Not elevated. Testing relaunch as administrator...");
+
+        // Create a CLI struct for the check command
+        let check_cli = {
+            Cli {
+                global_args: GlobalArgs::default(),
+                action: Action::Elevation(ElevationArgs {
+                    action: ElevationAction::Check(ElevationCheckArgs {}),
+                }),
             }
+        };
 
-            warn!("Not elevated. Testing relaunch as administrator...");
-
-            // Create a CLI struct for the check command
-            let check_cli = {
-                Cli {
-                    global_args: GlobalArgs::default(),
-                    action: Action::Elevation(ElevationArgs {
-                        action: ElevationAction::Check(ElevationCheckArgs {}),
-                    }),
-                }
-            };
-
-            info!("Relaunching as administrator to run elevation check...");
-            match relaunch_as_admin_with_cli(&check_cli) {
-                Ok(module) if module.0 as usize > 32 => {
-                    info!("Successfully relaunched as administrator for elevation test.");
-                    std::process::exit(0); // Exit the current process
-                }
-                Ok(module) => {
-                    return Err(eyre!(
-                        "Failed to relaunch as administrator. Error code: {:?}",
-                        module.0 as usize
-                    ));
-                }
-                Err(e) => {
-                    return Err(eyre!("Failed to relaunch as administrator: {}", e));
-                }
+        info!("Relaunching as administrator to run elevation check...");
+        match relaunch_as_admin_with_cli(&check_cli) {
+            Ok(module) if module.0 as usize > 32 => {
+                info!("Successfully relaunched as administrator for elevation test.");
+                std::process::exit(0); // Exit the current process
+            }
+            Ok(module) => {
+                return Err(eyre!(
+                    "Failed to relaunch as administrator. Error code: {:?}",
+                    module.0 as usize
+                ));
+            }
+            Err(e) => {
+                return Err(eyre!("Failed to relaunch as administrator: {}", e));
             }
         }
     }
