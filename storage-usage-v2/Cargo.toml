@@ -10,4 +10,18 @@ eyre = "0.6.12"
 hex = "0.4.3"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19" } #, features = ["env-filter"] }
-windows = "0.61.3"
+windows = {version="0.61.3",features=[
+
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_Storage",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI",
+    "Win32_System_Console",
+]}

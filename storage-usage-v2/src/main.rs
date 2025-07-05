@@ -9,5 +9,6 @@ fn main() -> eyre::Result<()> {
     let cli = Cli::from_arg_matches(&cli.get_matches())?;
     init_tracing(cli.global_args.log_level());
 
+    cli.action.run()?;
     Ok(())
 }

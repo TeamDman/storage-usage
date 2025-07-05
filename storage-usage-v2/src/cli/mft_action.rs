@@ -8,7 +8,21 @@ pub struct MftArgs {
     pub action: MftAction,
 }
 
+impl MftArgs {
+    pub fn run(self) -> eyre::Result<()> {
+        self.action.run()
+    }
+}
+
 #[derive(Subcommand, Clone)]
 pub enum MftAction {
     Dump(MftDumpArgs),
+}
+
+impl MftAction {
+    pub fn run(self) -> eyre::Result<()> {
+        match self {
+            MftAction::Dump(args) => args.run(),
+        }
+    }
 }
