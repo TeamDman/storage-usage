@@ -22,6 +22,7 @@ use windows::Win32::System::Ioctl::NTFS_VOLUME_DATA_BUFFER;
 pub fn dump_mft_to_file<P: AsRef<Path>>(
     output_path: P,
     overwrite_existing: bool,
+    drive_letter: char,
 ) -> eyre::Result<()> {
     let output_path = output_path.as_ref();
 
@@ -53,8 +54,8 @@ pub fn dump_mft_to_file<P: AsRef<Path>>(
 
     info!("Program is running with elevated privileges.");
 
-    // Extract drive letter from output path or default to C:
-    let drive_letter = extract_drive_letter_from_path(output_path).unwrap_or('C');
+    // Use the provided drive letter
+    let drive_letter = drive_letter.to_uppercase().next().unwrap_or('C');
 
     info!("Opening handle to drive {}:", drive_letter);
     let drive_handle = get_drive_handle(drive_letter)
@@ -67,28 +68,12 @@ pub fn dump_mft_to_file<P: AsRef<Path>>(
     write_mft_to_file(&mft_data, output_path)?;
 
     info!(
-        "Successfully dumped MFT ({} bytes) to '{}'",
-        mft_data.len(),
+        "Successfully dumped MFT ({}) to '{}'",
+        humansize::format_size(mft_data.len(), humansize::DECIMAL),
         output_path.display()
     );
 
     Ok(())
-}
-
-/// Extracts the drive letter from a file path
-fn extract_drive_letter_from_path(path: &Path) -> Option<char> {
-    path.components().next().and_then(|component| {
-        if let std::path::Component::Prefix(prefix) = component {
-            match prefix.kind() {
-                std::path::Prefix::Disk(letter) | std::path::Prefix::VerbatimDisk(letter) => {
-                    Some(letter as char)
-                }
-                _ => None,
-            }
-        } else {
-            None
-        }
-    })
 }
 
 /// Reads the raw MFT data from the drive handle
