@@ -121,8 +121,8 @@ fn read_mft_data(drive_handle: windows::Win32::Foundation::HANDLE) -> eyre::Resu
 
     info!("MFT starts at LCN: {}", volume_data.MftStartLcn);
     info!(
-        "MFT valid data length: {} bytes",
-        volume_data.MftValidDataLength
+        "MFT valid data length: {}",
+        humansize::format_size_i(volume_data.MftValidDataLength, humansize::DECIMAL)
     );
     info!("Bytes per cluster: {}", volume_data.BytesPerCluster);
 
