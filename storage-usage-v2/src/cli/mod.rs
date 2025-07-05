@@ -3,6 +3,7 @@ use crate::cli::global_args::GlobalArgs;
 use clap::Parser;
 
 pub mod action;
+pub mod elevation_action;
 pub mod global_args;
 pub mod mft_action;
 pub mod mft_dump_action;

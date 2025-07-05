@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod elevation_commands;
 pub mod init_tracing;
 pub mod mft_dump;
 pub mod win_elevation;

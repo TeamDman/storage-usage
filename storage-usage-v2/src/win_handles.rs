@@ -2,7 +2,6 @@ use crate::win_strings::to_wide_null;
 use std::ops::Deref;
 use std::ptr::null_mut;
 use tracing::warn;
-use windows::core::PCWSTR;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::CreateFileW;
@@ -12,6 +11,7 @@ use windows::Win32::Storage::FileSystem::FILE_SHARE_DELETE;
 use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
 use windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
 use windows::Win32::Storage::FileSystem::OPEN_EXISTING;
+use windows::core::PCWSTR;
 
 /// Auto-closing handle wrapper
 pub struct AutoClosingHandle(HANDLE);
