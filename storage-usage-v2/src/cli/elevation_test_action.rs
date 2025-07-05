@@ -28,7 +28,10 @@ impl ElevationTestArgs {
         // Create a CLI struct for the check command
         let check_cli = {
             Cli {
-                global_args: GlobalArgs::default(),
+                global_args: GlobalArgs {
+                    console_pid: Some(std::process::id()),
+                    ..Default::default()
+                },
                 action: Action::Elevation(ElevationArgs {
                     action: ElevationAction::Check(ElevationCheckArgs {}),
                 }),

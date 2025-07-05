@@ -7,6 +7,10 @@ pub struct GlobalArgs {
     /// Enable debug logging
     #[clap(long)]
     pub debug: bool,
+    
+    /// Console PID for console reuse (hidden)
+    #[clap(long, hide = true)]
+    pub console_pid: Option<u32>,
 }
 
 impl GlobalArgs {
@@ -24,6 +28,10 @@ impl ToArgs for GlobalArgs {
         let mut args = Vec::new();
         if self.debug {
             args.push("--debug".into());
+        }
+        if let Some(pid) = self.console_pid {
+            args.push("--console-pid".into());
+            args.push(pid.to_string().into());
         }
         args
     }
