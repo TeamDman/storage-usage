@@ -24,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 pub fn is_elevated() -> bool {
     unsafe {
         let mut token_handle = HANDLE::default();
-        if !OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle).is_ok() {
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle).is_err() {
             eprintln!("Failed to open process token. Error: {:?}", GetLastError());
             return false;
         }
@@ -97,7 +97,7 @@ pub fn run_as_admin(invocable: &impl Invocable) -> eyre::Result<AdminChild> {
             lpVerb: verb.as_ptr(),
             lpFile: file.as_ptr(),
             lpParameters: params.as_ptr(),
-            nShow: SW_SHOWNORMAL.0 as i32,
+            nShow: SW_SHOWNORMAL.0,
             ..Default::default()
         };
         ShellExecuteExW(&mut sei).wrap_err("Failed to run as administrator")?;

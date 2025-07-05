@@ -30,7 +30,7 @@ impl Drop for AutoClosingHandle {
 
 /// Opens a handle to the specified drive.
 pub fn get_drive_handle(drive_letter: char) -> eyre::Result<AutoClosingHandle> {
-    let drive_path = format!("\\\\.\\{}:", drive_letter);
+    let drive_path = format!("\\\\.\\{drive_letter}:");
     let handle = unsafe {
         CreateFileW(
             drive_path.easy_pcwstr()?.as_ref(),
@@ -44,8 +44,7 @@ pub fn get_drive_handle(drive_letter: char) -> eyre::Result<AutoClosingHandle> {
             Some(HANDLE::default()),
         )
         .wrap_err(format!(
-            "Failed to open volume handle for {:?}, did you forget to elevate?",
-            drive_letter
+            "Failed to open volume handle for {drive_letter:?}, did you forget to elevate?"
         ))?
     };
 

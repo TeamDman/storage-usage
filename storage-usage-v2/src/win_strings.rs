@@ -13,7 +13,10 @@ impl PCWSTRGuard {
     pub fn new(string: U16CString) -> Self {
         Self { string }
     }
-    /// Dangerous! You must ensure that the `PCWSTRGuard` outlives any usage of the pointer.
+    
+    /// # Safety
+    /// 
+    /// You must ensure that the `PCWSTRGuard` outlives any usage of the pointer.
     pub unsafe fn as_ptr(&self) -> PCWSTR {
         PCWSTR(self.string.as_ptr())
     }

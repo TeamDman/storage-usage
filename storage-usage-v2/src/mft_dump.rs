@@ -58,7 +58,7 @@ pub fn dump_mft_to_file<P: AsRef<Path>>(
 
     info!("Opening handle to drive {}:", drive_letter);
     let drive_handle = get_drive_handle(drive_letter)
-        .with_context(|| format!("Failed to open handle to drive {}", drive_letter))?;
+        .with_context(|| format!("Failed to open handle to drive {drive_letter}"))?;
 
     info!("Reading MFT data from drive {}...", drive_letter);
     let mft_data = read_mft_data(*drive_handle)?;

@@ -13,7 +13,7 @@ pub fn reuse_console_if_requested(global_args: &GlobalArgs) {
         return;
     };
     if global_args.debug {
-        eprintln!("Reusing console with PID: {}", pid);
+        eprintln!("Reusing console with PID: {pid}");
     }
 
     unsafe {
@@ -25,8 +25,7 @@ pub fn reuse_console_if_requested(global_args: &GlobalArgs) {
             // If attaching fails, allocate a new console as fallback
             let _ = AllocConsole();
             eprintln!(
-                "Failed to attach to console with PID {}, allocated a new console instead. Error: {e:?}",
-                pid
+                "Failed to attach to console with PID {pid}, allocated a new console instead. Error: {e:?}"
             );
             return;
         }
