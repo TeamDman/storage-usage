@@ -1,4 +1,5 @@
 use crate::cli::mft_dump_action::MftDumpArgs;
+use crate::cli::mft_diff_action::MftDiffArgs;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
 use clap::Args;
@@ -26,12 +27,14 @@ impl ToArgs for MftArgs {
 #[derive(Subcommand, Clone, Arbitrary, PartialEq, Debug)]
 pub enum MftAction {
     Dump(MftDumpArgs),
+    Diff(MftDiffArgs),
 }
 
 impl MftAction {
     pub fn run(self) -> eyre::Result<()> {
         match self {
             MftAction::Dump(args) => args.run(),
+            MftAction::Diff(args) => args.run(),
         }
     }
 }
@@ -43,6 +46,10 @@ impl ToArgs for MftAction {
             MftAction::Dump(dump_args) => {
                 args.push("dump".into());
                 args.extend(dump_args.to_args());
+            }
+            MftAction::Diff(diff_args) => {
+                args.push("diff".into());
+                args.extend(diff_args.to_args());
             }
         }
         args

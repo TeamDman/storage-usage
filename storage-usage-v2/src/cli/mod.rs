@@ -13,6 +13,7 @@ pub mod elevation_test_action;
 pub mod global_args;
 pub mod mft_action;
 pub mod mft_dump_action;
+pub mod mft_diff_action;
 
 #[derive(Parser, Arbitrary, PartialEq, Debug)]
 #[clap(version)]
