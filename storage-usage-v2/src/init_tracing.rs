@@ -1,4 +1,5 @@
 use tracing::Level;
+use tracing::debug;
 
 /// Initialize tracing subscriber with the given log level.
 /// In debug builds, include file and line number without timestamp.
@@ -14,4 +15,5 @@ pub fn init_tracing(level: Level) {
     #[cfg(not(debug_assertions))]
     let subscriber = builder.finish();
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
+    debug!("Tracing initialized with level: {:?}", level);
 }

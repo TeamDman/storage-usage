@@ -1,15 +1,15 @@
-use clap::Args;
 use crate::to_args::ToArgs;
+use clap::Args;
 use std::ffi::OsString;
 
 #[derive(Args, Default)]
 pub struct GlobalArgs {
     /// Enable debug logging
-    #[clap(long)]
+    #[clap(long, global = true)]
     pub debug: bool,
-    
+
     /// Console PID for console reuse (hidden)
-    #[clap(long, hide = true)]
+    #[clap(long, hide = true, global = true)]
     pub console_pid: Option<u32>,
 }
 

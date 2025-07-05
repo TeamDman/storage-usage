@@ -1,17 +1,20 @@
-use crate::cli::Cli;
-use clap::Parser;
-use windows::core::w;
+use crate::cli::global_args::GlobalArgs;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::System::Console::*;
+use windows::core::w;
 
 /// Reuses the console of the parent process if requested via command line args.
 /// This must be called before any logging initialization or stdout/stderr usage.
-pub fn reuse_console_if_requested() {
-    let Some(pid) = Cli::parse().global_args.console_pid else { 
-        eprintln!("No console PID provided, skipping console reuse.");
-        return; 
+pub fn reuse_console_if_requested(global_args: &GlobalArgs) {
+    let Some(pid) = global_args.console_pid else {
+        if global_args.debug {
+            eprintln!("No console PID provided, skipping console reuse.");
+        }
+        return;
     };
-    eprintln!("Reusing console with PID: {}", pid);
+    if global_args.debug {
+        eprintln!("Reusing console with PID: {}", pid);
+    }
 
     unsafe {
         // Detach from (non-existent) default console just in case
@@ -21,7 +24,10 @@ pub fn reuse_console_if_requested() {
         if let Err(e) = AttachConsole(pid) {
             // If attaching fails, allocate a new console as fallback
             let _ = AllocConsole();
-            eprintln!("Failed to attach to console with PID {}, allocated a new console instead. Error: {e:?}", pid);
+            eprintln!(
+                "Failed to attach to console with PID {}, allocated a new console instead. Error: {e:?}",
+                pid
+            );
             return;
         }
 
@@ -48,7 +54,7 @@ pub fn reuse_console_if_requested() {
         if let Ok(con_out) = con_out {
             let _ = SetStdHandle(STD_OUTPUT_HANDLE, con_out);
             let _ = SetStdHandle(STD_ERROR_HANDLE, con_out);
-            
+
             // Optional: enable ANSI again
             let mut mode = CONSOLE_MODE::default();
             if GetConsoleMode(con_out, &mut mode).is_ok() {
@@ -58,7 +64,7 @@ pub fn reuse_console_if_requested() {
                 );
             }
         }
-        
+
         if let Ok(con_in) = con_in {
             let _ = SetStdHandle(STD_INPUT_HANDLE, con_in);
         }
