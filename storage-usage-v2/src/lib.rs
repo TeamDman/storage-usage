@@ -3,6 +3,7 @@ pub mod console_reuse;
 pub mod init_tracing;
 pub mod mft_dump;
 pub mod mft_diff;
+pub mod mft_summarize;
 pub mod to_args;
 pub mod win_elevation;
 pub mod win_handles;

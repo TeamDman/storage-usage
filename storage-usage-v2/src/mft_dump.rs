@@ -4,6 +4,7 @@ use crate::win_handles::get_drive_handle;
 use eyre::Context;
 use eyre::ContextCompat;
 use eyre::eyre;
+use windows::Win32::Foundation::HANDLE;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -77,7 +78,7 @@ pub fn dump_mft_to_file<P: AsRef<Path>>(
 }
 
 /// Reads the raw MFT data from the drive handle
-fn read_mft_data(drive_handle: windows::Win32::Foundation::HANDLE) -> eyre::Result<Vec<u8>> {
+fn read_mft_data(drive_handle: HANDLE) -> eyre::Result<Vec<u8>> {
     // This is a simplified implementation - in a real MFT parser, you would:
     // 1. Get NTFS volume data to find MFT location and size
     // 2. Read the MFT using proper sector alignment
