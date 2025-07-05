@@ -1,0 +1,17 @@
+[package]
+name = "total-space"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+color-eyre = "0.6.5"
+eyre = "0.6.12"
+humansize = "2.1.3"
+itertools = "0.14.0"
+ratatui = "0.29.0"
+uom = "0.37.0"
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_SystemServices",
+] }
