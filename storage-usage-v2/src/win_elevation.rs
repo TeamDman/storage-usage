@@ -1,18 +1,23 @@
 use crate::to_args::Invocable;
 use crate::win_strings::EasyPCWSTR;
+use eyre::Context;
 use std::ffi::OsString;
 use std::mem::size_of;
+use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Foundation::HINSTANCE;
-use windows::Win32::Foundation::HWND;
 use windows::Win32::Security::GetTokenInformation;
 use windows::Win32::Security::TOKEN_ELEVATION;
 use windows::Win32::Security::TOKEN_QUERY;
 use windows::Win32::Security::TokenElevation;
 use windows::Win32::System::Threading::GetCurrentProcess;
+use windows::Win32::System::Threading::GetExitCodeProcess;
+use windows::Win32::System::Threading::INFINITE;
 use windows::Win32::System::Threading::OpenProcessToken;
-use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::System::Threading::WaitForSingleObject;
+use windows::Win32::UI::Shell::SEE_MASK_NOCLOSEPROCESS;
+use windows::Win32::UI::Shell::SHELLEXECUTEINFOW;
+use windows::Win32::UI::Shell::ShellExecuteExW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 /// Checks if the current process is running with elevated privileges.
@@ -47,43 +52,62 @@ pub fn is_elevated() -> bool {
     }
 }
 
-/// Relaunches the current executable with administrative privileges, preserving arguments.
-pub fn relaunch_as_admin() -> eyre::Result<HINSTANCE> {
-    run_as_admin(&crate::to_args::ThisInvocation)
+pub struct AdminChild {
+    pub h_process: HANDLE,
 }
 
-/// Runs an invocable with administrative privileges using ShellExecuteW.
-pub fn run_as_admin(invocable: &impl Invocable) -> eyre::Result<HINSTANCE> {
-    // Call ShellExecuteW
-    let result = unsafe {
-        ShellExecuteW(
-            Some(HWND(std::ptr::null_mut())),
-            "runas".easy_pcwstr()?.as_ref(),
-            invocable.executable().easy_pcwstr()?.as_ref(),
-            invocable
-                .args()
-                .into_iter()
-                .fold(OsString::new(), |mut acc, arg| {
-                    acc.push(arg);
-                    acc.push(" ");
-                    acc
-                })
-                .easy_pcwstr()?
-                .as_ref(),
-            "".easy_pcwstr()?.as_ref(),
-            SW_SHOWNORMAL,
-        )
-    };
+impl AdminChild {
+    pub fn wait(self) -> eyre::Result<u32> {
+        unsafe {
+            WaitForSingleObject(self.h_process, INFINITE);
+            let mut code = 0u32;
+            GetExitCodeProcess(self.h_process, &mut code)
+                .map_err(|e| eyre::eyre!("Failed to get exit code: {}", e))?;
+            CloseHandle(self.h_process)?;
+            Ok(code)
+        }
+    }
+}
 
-    // Check if the operation was successful
-    if result.0 as usize > 32 {
-        Ok(result)
-    } else {
-        Err(windows::core::Error::from_win32().into())
+/// Relaunches the current executable with administrative privileges, preserving arguments and console.
+pub fn relaunch_as_admin() -> eyre::Result<AdminChild> {
+    run_as_admin(&crate::to_args::SameInvocationSameConsole)
+}
+
+/// Runs an invocable with administrative privileges using ShellExecuteExW.
+pub fn run_as_admin(invocable: &impl Invocable) -> eyre::Result<AdminChild> {
+    // Build a single space-separated string of arguments
+    let params: OsString = invocable
+        .args()
+        .into_iter()
+        .fold(OsString::new(), |mut acc, arg| {
+            acc.push(arg);
+            acc.push(" ");
+            acc
+        });
+
+    // ---------------- ShellExecuteExW ----------------
+    let verb = "runas".easy_pcwstr()?;
+    let file = invocable.executable().easy_pcwstr()?;
+    let params = params.easy_pcwstr()?;
+    unsafe {
+        let mut sei = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOCLOSEPROCESS,
+            lpVerb: verb.as_ptr(),
+            lpFile: file.as_ptr(),
+            lpParameters: params.as_ptr(),
+            nShow: SW_SHOWNORMAL.0 as i32,
+            ..Default::default()
+        };
+        ShellExecuteExW(&mut sei).wrap_err("Failed to run as administrator")?;
+        Ok(AdminChild {
+            h_process: sei.hProcess,
+        })
     }
 }
 
 /// Relaunches the current executable with administrative privileges using a specific CLI configuration.
-pub fn relaunch_as_admin_with_cli(cli: &crate::cli::Cli) -> eyre::Result<HINSTANCE> {
+pub fn relaunch_as_admin_with_cli(cli: &crate::cli::Cli) -> eyre::Result<AdminChild> {
     run_as_admin(cli)
 }

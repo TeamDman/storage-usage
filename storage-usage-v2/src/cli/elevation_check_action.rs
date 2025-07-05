@@ -1,6 +1,8 @@
+use crate::to_args::ToArgs;
+use crate::win_elevation::is_elevated;
 use clap::Args;
-use crate::{to_args::ToArgs, win_elevation::is_elevated};
-use std::{ffi::OsString, io::Write};
+use std::ffi::OsString;
+use std::io::Write;
 
 #[derive(Args, Clone)]
 pub struct ElevationCheckArgs {}

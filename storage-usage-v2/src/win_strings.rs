@@ -31,8 +31,6 @@ impl AsRef<PCWSTRGuard> for PCWSTRGuard {
     }
 }
 
-
-
 pub trait EasyPCWSTR {
     type Error;
     fn easy_pcwstr(self) -> eyre::Result<PCWSTRGuard, Self::Error>;

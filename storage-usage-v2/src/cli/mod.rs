@@ -1,6 +1,7 @@
 use crate::cli::action::Action;
 use crate::cli::global_args::GlobalArgs;
-use crate::to_args::{Invocable, ToArgs};
+use crate::to_args::Invocable;
+use crate::to_args::ToArgs;
 use clap::Parser;
 use std::ffi::OsString;
 
@@ -40,7 +41,7 @@ impl Invocable for Cli {
     fn executable(&self) -> std::path::PathBuf {
         std::env::current_exe().expect("Failed to get current executable path")
     }
-    
+
     fn args(&self) -> Vec<OsString> {
         self.to_args()
     }

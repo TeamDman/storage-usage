@@ -7,9 +7,16 @@ use eyre::eyre;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::mem::size_of;
 use std::path::Path;
 use tracing::info;
 use tracing::warn;
+use windows::Win32::Storage::FileSystem::FILE_BEGIN;
+use windows::Win32::Storage::FileSystem::ReadFile;
+use windows::Win32::Storage::FileSystem::SetFilePointerEx;
+use windows::Win32::System::IO::DeviceIoControl;
+use windows::Win32::System::Ioctl::FSCTL_GET_NTFS_VOLUME_DATA;
+use windows::Win32::System::Ioctl::NTFS_VOLUME_DATA_BUFFER;
 
 /// Dumps the MFT to the specified file path
 pub fn dump_mft_to_file<P: AsRef<Path>>(
@@ -32,15 +39,11 @@ pub fn dump_mft_to_file<P: AsRef<Path>>(
         info!("Relaunching as administrator...");
 
         match relaunch_as_admin() {
-            Ok(module) if module.0 as usize > 32 => {
-                info!("Successfully relaunched as administrator.");
-                std::process::exit(0); // Exit the current process
-            }
-            Ok(module) => {
-                return Err(eyre!(
-                    "Failed to relaunch as administrator. Error code: {:?}",
-                    module
-                ));
+            Ok(child) => {
+                info!("Spawned elevated process for MFT dump – waiting for it to finish…");
+                let exit_code = child.wait()?;
+                info!("Elevated MFT dump process exited with code {exit_code}");
+                std::process::exit(exit_code as i32);
             }
             Err(e) => {
                 return Err(eyre!("Failed to relaunch as administrator: {}", e));
@@ -96,10 +99,6 @@ fn read_mft_data(drive_handle: windows::Win32::Foundation::HANDLE) -> eyre::Resu
     // 3. Handle MFT fragmentation
 
     // For now, we'll implement a basic version that demonstrates the concept
-    use std::mem::size_of;
-    use windows::Win32::System::IO::DeviceIoControl;
-    use windows::Win32::System::Ioctl::FSCTL_GET_NTFS_VOLUME_DATA;
-    use windows::Win32::System::Ioctl::NTFS_VOLUME_DATA_BUFFER;
 
     // Get NTFS volume data to locate the MFT
     let mut volume_data = NTFS_VOLUME_DATA_BUFFER::default();
@@ -132,10 +131,6 @@ fn read_mft_data(drive_handle: windows::Win32::Foundation::HANDLE) -> eyre::Resu
 
     // Read the MFT data
     let mut mft_data = vec![0u8; mft_size as usize];
-
-    use windows::Win32::Storage::FileSystem::FILE_BEGIN;
-    use windows::Win32::Storage::FileSystem::ReadFile;
-    use windows::Win32::Storage::FileSystem::SetFilePointerEx;
 
     // Seek to MFT start
     unsafe {

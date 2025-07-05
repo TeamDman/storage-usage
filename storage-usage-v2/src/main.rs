@@ -8,7 +8,7 @@ fn main() -> eyre::Result<()> {
     color_eyre::install()?;
     let cli = Cli::command();
     let cli = Cli::from_arg_matches(&cli.get_matches())?;
-    
+
     reuse_console_if_requested(&cli.global_args);
     init_tracing(cli.global_args.log_level());
 

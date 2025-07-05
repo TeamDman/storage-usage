@@ -1,8 +1,8 @@
-use clap::Args;
-use clap::Subcommand;
 use crate::cli::elevation_check_action::ElevationCheckArgs;
 use crate::cli::elevation_test_action::ElevationTestArgs;
 use crate::to_args::ToArgs;
+use clap::Args;
+use clap::Subcommand;
 use std::ffi::OsString;
 
 #[derive(Args)]

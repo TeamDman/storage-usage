@@ -1,12 +1,12 @@
-use clap::Args;
 use crate::to_args::ToArgs;
+use clap::Args;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 #[derive(Args, Clone)]
 pub struct MftDumpArgs {
     pub output_path: PathBuf,
-    
+
     #[clap(long, help = "Overwrite existing output file")]
     pub overwrite_existing: bool,
 }
