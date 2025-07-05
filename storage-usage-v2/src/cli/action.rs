@@ -1,10 +1,11 @@
 use crate::cli::elevation_action::ElevationArgs;
 use crate::cli::mft_action::MftArgs;
 use crate::to_args::ToArgs;
+use arbitrary::Arbitrary;
 use clap::Subcommand;
 use std::ffi::OsString;
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Arbitrary, PartialEq, Debug)]
 pub enum Action {
     Mft(MftArgs),
     Elevation(ElevationArgs),

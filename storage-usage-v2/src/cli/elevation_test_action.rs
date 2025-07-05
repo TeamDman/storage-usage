@@ -7,13 +7,14 @@ use crate::cli::global_args::GlobalArgs;
 use crate::to_args::ToArgs;
 use crate::win_elevation::is_elevated;
 use crate::win_elevation::run_as_admin;
+use arbitrary::Arbitrary;
 use clap::Args;
 use eyre::eyre;
 use std::ffi::OsString;
 use tracing::info;
 use tracing::warn;
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Arbitrary, PartialEq, Debug)]
 pub struct ElevationTestArgs {}
 
 impl ElevationTestArgs {

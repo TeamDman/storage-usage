@@ -1,9 +1,10 @@
 use crate::to_args::ToArgs;
+use arbitrary::Arbitrary;
 use clap::Args;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, PartialEq, Debug)]
 pub struct MftDumpArgs {
     pub output_path: PathBuf,
 
@@ -12,6 +13,41 @@ pub struct MftDumpArgs {
     
     #[clap(long, short = 'd', default_value = "C", help = "Drive letter to dump MFT from")]
     pub drive_letter: char,
+}
+
+impl<'a> Arbitrary<'a> for MftDumpArgs {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        // Generate a valid non-empty path
+        let output_path = {
+            let path_chars: Vec<char> = (0..10)
+                .map(|_| {
+                    let c = char::arbitrary(u).unwrap_or('a');
+                    if c.is_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                        c
+                    } else {
+                        'a'
+                    }
+                })
+                .collect();
+            let path_str: String = path_chars.into_iter().collect();
+            format!("test_{}.txt", path_str).into()
+        };
+
+        // Generate a random boolean for overwrite_existing
+        let overwrite_existing = bool::arbitrary(u)?;
+
+        // Generate a valid drive letter (A-Z)
+        let drive_letter = {
+            let letter_index = u8::arbitrary(u)? % 26;
+            (b'A' + letter_index) as char
+        };
+
+        Ok(MftDumpArgs {
+            output_path,
+            overwrite_existing,
+            drive_letter,
+        })
+    }
 }
 
 impl MftDumpArgs {

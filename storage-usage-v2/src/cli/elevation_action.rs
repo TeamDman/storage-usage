@@ -1,11 +1,12 @@
 use crate::cli::elevation_check_action::ElevationCheckArgs;
 use crate::cli::elevation_test_action::ElevationTestArgs;
 use crate::to_args::ToArgs;
+use arbitrary::Arbitrary;
 use clap::Args;
 use clap::Subcommand;
 use std::ffi::OsString;
 
-#[derive(Args)]
+#[derive(Args, Arbitrary, PartialEq, Debug)]
 pub struct ElevationArgs {
     #[clap(subcommand)]
     pub action: ElevationAction,
@@ -23,7 +24,7 @@ impl ToArgs for ElevationArgs {
     }
 }
 
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Arbitrary, PartialEq, Debug)]
 pub enum ElevationAction {
     Check(ElevationCheckArgs),
     Test(ElevationTestArgs),

@@ -1,10 +1,11 @@
 use crate::to_args::ToArgs;
 use crate::win_elevation::is_elevated;
+use arbitrary::Arbitrary;
 use clap::Args;
 use std::ffi::OsString;
 use std::io::Write;
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Arbitrary, PartialEq, Debug)]
 pub struct ElevationCheckArgs {}
 
 impl ElevationCheckArgs {

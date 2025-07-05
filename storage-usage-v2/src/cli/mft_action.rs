@@ -1,10 +1,11 @@
 use crate::cli::mft_dump_action::MftDumpArgs;
 use crate::to_args::ToArgs;
+use arbitrary::Arbitrary;
 use clap::Args;
 use clap::Subcommand;
 use std::ffi::OsString;
 
-#[derive(Args)]
+#[derive(Args, Arbitrary, PartialEq, Debug)]
 pub struct MftArgs {
     #[clap(subcommand)]
     pub action: MftAction,
@@ -22,7 +23,7 @@ impl ToArgs for MftArgs {
     }
 }
 
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Arbitrary, PartialEq, Debug)]
 pub enum MftAction {
     Dump(MftDumpArgs),
 }
