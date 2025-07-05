@@ -1,6 +1,7 @@
 use crate::cli::mft_dump_action::MftDumpArgs;
 use crate::cli::mft_diff_action::MftDiffArgs;
 use crate::cli::mft_summarize_action::MftSummarizeArgs;
+use crate::cli::mft_query_action::MftQueryArgs;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
 use clap::Args;
@@ -30,6 +31,7 @@ pub enum MftAction {
     Dump(MftDumpArgs),
     Diff(MftDiffArgs),
     Summarize(MftSummarizeArgs),
+    Query(MftQueryArgs),
 }
 
 impl MftAction {
@@ -38,6 +40,7 @@ impl MftAction {
             MftAction::Dump(args) => args.run(),
             MftAction::Diff(args) => args.run(),
             MftAction::Summarize(args) => args.run(),
+            MftAction::Query(args) => args.run(),
         }
     }
 }
@@ -57,6 +60,10 @@ impl ToArgs for MftAction {
             MftAction::Summarize(summarize_args) => {
                 args.push("summarize".into());
                 args.extend(summarize_args.to_args());
+            }
+            MftAction::Query(query_args) => {
+                args.push("query".into());
+                args.extend(query_args.to_args());
             }
         }
         args
