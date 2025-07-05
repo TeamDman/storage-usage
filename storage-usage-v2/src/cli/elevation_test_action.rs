@@ -4,9 +4,9 @@ use crate::cli::elevation_action::ElevationAction;
 use crate::cli::elevation_action::ElevationArgs;
 use crate::cli::elevation_check_action::ElevationCheckArgs;
 use crate::cli::global_args::GlobalArgs;
+use crate::run_as_admin_wait::run_as_admin;
 use crate::to_args::ToArgs;
 use crate::win_elevation::is_elevated;
-use crate::win_elevation::relaunch_as_admin_with_cli;
 use clap::Args;
 use eyre::eyre;
 use std::ffi::OsString;
@@ -25,34 +25,26 @@ impl ElevationTestArgs {
 
         warn!("Not elevated. Testing relaunch as administrator...");
 
-        // Create a CLI struct for the check command
-        let check_cli = {
-            Cli {
-                global_args: GlobalArgs {
-                    console_pid: Some(std::process::id()),
-                    ..Default::default()
-                },
-                action: Action::Elevation(ElevationArgs {
-                    action: ElevationAction::Check(ElevationCheckArgs {}),
-                }),
-            }
+        // build the CLI that the elevated instance must execute
+        let check_cli = Cli {
+            global_args: GlobalArgs {
+                console_pid: Some(std::process::id()),
+                ..Default::default()
+            },
+            action: Action::Elevation(ElevationArgs {
+                action: ElevationAction::Check(ElevationCheckArgs {}),
+            }),
         };
 
         info!("Relaunching as administrator to run elevation check...");
-        match relaunch_as_admin_with_cli(&check_cli) {
-            Ok(module) if module.0 as usize > 32 => {
-                info!("Successfully relaunched as administrator for elevation test.");
-                std::process::exit(0); // Exit the current process
+        match run_as_admin(&check_cli) {
+            Ok(child) => {
+                info!("Spawned elevated process – waiting for it to finish…");
+                let exit_code = child.wait()?;
+                info!("Elevated process exited with code {exit_code}");
+                std::process::exit(exit_code as i32);
             }
-            Ok(module) => {
-                return Err(eyre!(
-                    "Failed to relaunch as administrator. Error code: {:?}",
-                    module.0 as usize
-                ));
-            }
-            Err(e) => {
-                return Err(eyre!("Failed to relaunch as administrator: {}", e));
-            }
+            Err(e) => Err(eyre!("Failed to relaunch as administrator: {e}")),
         }
     }
 }
