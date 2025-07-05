@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub fn summarize_mft_file(
     mft_file: PathBuf,
     verbose: bool,
+    show_paths: bool,
     max_entries: Option<usize>,
 ) -> eyre::Result<()> {
     println!("Summarizing MFT file: {}", mft_file.display());
@@ -21,6 +22,7 @@ pub fn summarize_mft_file(
     let mut filename_entries = 0;
     let directory_entries = 0;
     let mut file_entries = 0;
+    let mut sample_paths: Vec<String> = Vec::new();
 
     println!("Analyzing MFT entries...");
     
@@ -59,8 +61,22 @@ pub fn summarize_mft_file(
 
                             // Analyze specific attribute types
                             match &attribute.data {
-                                MftAttributeContent::AttrX30(_filename_attr) => {
+                                MftAttributeContent::AttrX30(filename_attr) => {
                                     filename_entries += 1;
+                                    
+                                    // Collect sample file paths if requested
+                                    if show_paths && sample_paths.len() < 20 {
+                                        let filename = &filename_attr.name;
+                                        // Skip system files and collect more interesting paths
+                                        if !filename.is_empty() 
+                                            && !filename.starts_with('$') 
+                                            && !filename.eq(".") 
+                                            && filename.len() > 2 
+                                            && (filename.contains('.') || filename.len() > 8) {
+                                            sample_paths.push(filename.clone());
+                                        }
+                                    }
+                                    
                                     if verbose {
                                         // Could collect filenames here for verbose output
                                     }
@@ -112,6 +128,14 @@ pub fn summarize_mft_file(
         
         for (attr_type, count) in sorted_attributes {
             println!("  {:20}: {}", attr_type, count);
+        }
+        println!();
+    }
+
+    if show_paths && !sample_paths.is_empty() {
+        println!("Sample File Paths (first {} interesting files found):", sample_paths.len().min(10));
+        for (i, path) in sample_paths.iter().take(10).enumerate() {
+            println!("  {}: {}", i + 1, path);
         }
         println!();
     }
