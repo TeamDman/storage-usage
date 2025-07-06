@@ -8,15 +8,18 @@ use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::crossterm::event::{self};
 use ratatui::layout::Constraint;
+use ratatui::layout::Flex;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::symbols::Marker;
 use ratatui::symbols::{self};
 use ratatui::text::Line;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
+use ratatui::widgets::Clear;
 use ratatui::widgets::Gauge;
 use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
@@ -68,7 +71,7 @@ struct AnalysisProgress {
     entries_per_second: f64,
     estimated_total: Option<usize>,
     eta_seconds: Option<f64>,
-    
+
     // Error tracking
     errors: Vec<Line<'static>>,
     critical_errors: usize,
@@ -132,12 +135,12 @@ impl AnalysisProgress {
 
                 // Update rate calculation every 100 entries
                 if self.total_entries.is_multiple_of(100) {
-                    self.update_rate();
+                    self.recalculate_rate_and_eta();
                 }
             }
             ProgressMessage::EstimatedTotal(total) => {
                 self.estimated_total = Some(total);
-                self.update_rate();
+                self.recalculate_rate_and_eta();
             }
             ProgressMessage::Complete => {
                 self.is_complete = true;
@@ -146,7 +149,7 @@ impl AnalysisProgress {
             }
             ProgressMessage::Error(error_msg) => {
                 self.errors.push(error_msg.clone());
-                // Count error types based on the message content  
+                // Count error types based on the message content
                 if let Some(first_span) = error_msg.spans.get(0) {
                     let content = first_span.content.as_ref();
                     if content.contains("[CRITICAL]") {
@@ -179,7 +182,7 @@ impl AnalysisProgress {
         }
     }
 
-    fn update_rate(&mut self) {
+    fn recalculate_rate_and_eta(&mut self) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.start_time).as_secs_f64();
         if elapsed > 0.0 {
@@ -198,10 +201,11 @@ impl AnalysisProgress {
 
     fn progress_percentage(&self) -> u16 {
         if let Some(estimated_total) = self.estimated_total
-            && estimated_total > 0 {
-                return ((self.total_entries as f64 / estimated_total as f64) * 100.0).min(100.0)
-                    as u16;
-            }
+            && estimated_total > 0
+        {
+            return ((self.total_entries as f64 / estimated_total as f64) * 100.0).min(100.0)
+                as u16;
+        }
         0
     }
 
@@ -211,22 +215,10 @@ impl AnalysisProgress {
 
     fn create_styled_error(error_type: &str, message: String) -> Line<'static> {
         match error_type.to_lowercase().as_str() {
-            "attribute" => Line::from(vec![
-                "[ATTR] ".yellow().bold(),
-                message.white(),
-            ]),
-            "entry" => Line::from(vec![
-                "[ENTRY] ".red().bold(),
-                message.white(),
-            ]),
-            "critical" => Line::from(vec![
-                "[CRITICAL] ".red().bold().on_black(),
-                message.white(),
-            ]),
-            _ => Line::from(vec![
-                "[ERROR] ".magenta().bold(),
-                message.white(),
-            ]),
+            "attribute" => Line::from(vec!["[ATTR] ".yellow().bold(), message.white()]),
+            "entry" => Line::from(vec!["[ENTRY] ".red().bold(), message.white()]),
+            "critical" => Line::from(vec!["[CRITICAL] ".red().bold().on_black(), message.white()]),
+            _ => Line::from(vec!["[ERROR] ".magenta().bold(), message.white()]),
         }
     }
 
@@ -245,6 +237,7 @@ struct MftSummaryApp {
     text_scroll_position: u16,
     text_scroll_state: ScrollbarState,
     last_text_area_height: u16,
+    show_legend: bool,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -322,6 +315,7 @@ impl MftSummaryApp {
     fn new(mft_file: PathBuf) -> Self {
         Self {
             mft_file,
+            show_legend: true,
             ..Default::default()
         }
     }
@@ -348,86 +342,116 @@ impl MftSummaryApp {
             } else {
                 Duration::from_millis(100)
             };
-            
+
             if event::poll(poll_timeout)?
                 && let Event::Key(key) = event::read()?
-                    && key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Char('l') | KeyCode::Right => self.next_tab(),
-                            KeyCode::Char('h') | KeyCode::Left => self.previous_tab(),
-                            KeyCode::Char('j') | KeyCode::Down => {
-                                if matches!(self.selected_tab, SelectedTab::TextSummary | SelectedTab::Errors) {
-                                    let increment = if matches!(self.selected_tab, SelectedTab::Errors) 
-                                        && self.analysis_progress.errors.len() > 100 {
-                                        // Faster scrolling for large error lists
-                                        2
-                                    } else {
-                                        1
-                                    };
-                                    self.text_scroll_position =
-                                        self.text_scroll_position.saturating_add(increment);
-                                }
-                            }
-                            KeyCode::Char('k') | KeyCode::Up => {
-                                if matches!(self.selected_tab, SelectedTab::TextSummary | SelectedTab::Errors) {
-                                    let increment = if matches!(self.selected_tab, SelectedTab::Errors) 
-                                        && self.analysis_progress.errors.len() > 100 {
-                                        // Faster scrolling for large error lists
-                                        2
-                                    } else {
-                                        1
-                                    };
-                                    self.text_scroll_position =
-                                        self.text_scroll_position.saturating_sub(increment);
-                                }
-                            }
-                            KeyCode::PageDown => {
-                                if matches!(self.selected_tab, SelectedTab::TextSummary | SelectedTab::Errors) {
-                                    let page_size = if matches!(self.selected_tab, SelectedTab::Errors) 
-                                        && self.analysis_progress.errors.len() > 100 {
-                                        // Larger page size for error lists
-                                        self.last_text_area_height.max(10)
-                                    } else {
-                                        (self.last_text_area_height / 2).max(1)
-                                    };
-                                    self.text_scroll_position =
-                                        self.text_scroll_position.saturating_add(page_size);
-                                }
-                            }
-                            KeyCode::PageUp => {
-                                if matches!(self.selected_tab, SelectedTab::TextSummary | SelectedTab::Errors) {
-                                    let page_size = if matches!(self.selected_tab, SelectedTab::Errors) 
-                                        && self.analysis_progress.errors.len() > 100 {
-                                        // Larger page size for error lists
-                                        self.last_text_area_height.max(10)
-                                    } else {
-                                        (self.last_text_area_height / 2).max(1)
-                                    };
-                                    self.text_scroll_position =
-                                        self.text_scroll_position.saturating_sub(page_size);
-                                }
-                            }
-                            KeyCode::Home => {
-                                if matches!(self.selected_tab, SelectedTab::TextSummary | SelectedTab::Errors) {
-                                    self.text_scroll_position = 0;
-                                }
-                            }
-                            KeyCode::End => {
-                                if matches!(self.selected_tab, SelectedTab::TextSummary | SelectedTab::Errors) {
-                                    // Jump to end - for errors tab, calculate based on virtual content
-                                    let max_scroll = if matches!(self.selected_tab, SelectedTab::Errors) {
-                                        let lines_per_error = 2;
-                                        (self.analysis_progress.errors.len() * lines_per_error).saturating_sub(self.last_text_area_height as usize / 2) as u16
-                                    } else {
-                                        1000 // Large number for text summary
-                                    };
-                                    self.text_scroll_position = max_scroll;
-                                }
-                            }
-                            KeyCode::Char('q') | KeyCode::Esc => self.quit(),
-                            _ => {}
+                && key.kind == KeyEventKind::Press
+            {
+                match key.code {
+                    KeyCode::Char('l') | KeyCode::Right => self.next_tab(),
+                    KeyCode::Char('h')
+                        if matches!(self.selected_tab, SelectedTab::Visualization) =>
+                    {
+                        self.show_legend = !self.show_legend;
+                    }
+                    KeyCode::Char('h') | KeyCode::Left => self.previous_tab(),
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if matches!(
+                            self.selected_tab,
+                            SelectedTab::TextSummary | SelectedTab::Errors
+                        ) {
+                            let increment = if matches!(self.selected_tab, SelectedTab::Errors)
+                                && self.analysis_progress.errors.len() > 100
+                            {
+                                // Faster scrolling for large error lists
+                                2
+                            } else {
+                                1
+                            };
+                            self.text_scroll_position =
+                                self.text_scroll_position.saturating_add(increment);
                         }
                     }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        if matches!(
+                            self.selected_tab,
+                            SelectedTab::TextSummary | SelectedTab::Errors
+                        ) {
+                            let increment = if matches!(self.selected_tab, SelectedTab::Errors)
+                                && self.analysis_progress.errors.len() > 100
+                            {
+                                // Faster scrolling for large error lists
+                                2
+                            } else {
+                                1
+                            };
+                            self.text_scroll_position =
+                                self.text_scroll_position.saturating_sub(increment);
+                        }
+                    }
+                    KeyCode::PageDown => {
+                        if matches!(
+                            self.selected_tab,
+                            SelectedTab::TextSummary | SelectedTab::Errors
+                        ) {
+                            let page_size = if matches!(self.selected_tab, SelectedTab::Errors)
+                                && self.analysis_progress.errors.len() > 100
+                            {
+                                // Larger page size for error lists
+                                self.last_text_area_height.max(10)
+                            } else {
+                                (self.last_text_area_height / 2).max(1)
+                            };
+                            self.text_scroll_position =
+                                self.text_scroll_position.saturating_add(page_size);
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        if matches!(
+                            self.selected_tab,
+                            SelectedTab::TextSummary | SelectedTab::Errors
+                        ) {
+                            let page_size = if matches!(self.selected_tab, SelectedTab::Errors)
+                                && self.analysis_progress.errors.len() > 100
+                            {
+                                // Larger page size for error lists
+                                self.last_text_area_height.max(10)
+                            } else {
+                                (self.last_text_area_height / 2).max(1)
+                            };
+                            self.text_scroll_position =
+                                self.text_scroll_position.saturating_sub(page_size);
+                        }
+                    }
+                    KeyCode::Home => {
+                        if matches!(
+                            self.selected_tab,
+                            SelectedTab::TextSummary | SelectedTab::Errors
+                        ) {
+                            self.text_scroll_position = 0;
+                        }
+                    }
+                    KeyCode::End => {
+                        if matches!(
+                            self.selected_tab,
+                            SelectedTab::TextSummary | SelectedTab::Errors
+                        ) {
+                            // Jump to end - for errors tab, calculate based on virtual content
+                            let max_scroll = if matches!(self.selected_tab, SelectedTab::Errors) {
+                                let lines_per_error = 2;
+                                (self.analysis_progress.errors.len() * lines_per_error)
+                                    .saturating_sub(self.last_text_area_height as usize / 2)
+                                    as u16
+                            } else {
+                                1000 // Large number for text summary
+                            };
+                            self.text_scroll_position = max_scroll;
+                        }
+                    }
+                    KeyCode::Char('q') | KeyCode::Esc => self.quit(),
+                    _ => {}
+                }
+            }
         }
         Ok(())
     }
@@ -436,10 +460,11 @@ impl MftSummaryApp {
         let (sender, receiver) = mpsc::channel();
         let mft_file = self.mft_file.clone();
 
-        thread::spawn(move || {        if let Err(e) = Self::analyze_mft_in_background(mft_file, sender.clone()) {
-            let error_line = AnalysisProgress::create_styled_error("critical", e.to_string());
-            let _ = sender.send(ProgressMessage::Error(error_line));
-        }
+        thread::spawn(move || {
+            if let Err(e) = Self::analyze_mft_in_background(mft_file, sender.clone()) {
+                let error_line = AnalysisProgress::create_styled_error("critical", e.to_string());
+                let _ = sender.send(ProgressMessage::Error(error_line));
+            }
         });
 
         Ok(receiver)
@@ -476,7 +501,9 @@ impl MftSummaryApp {
                                     attribute_type = Some(attr_type);
                                 }
 
-                                if let MftAttributeContent::AttrX30(filename_attribute) = &attribute.data {
+                                if let MftAttributeContent::AttrX30(filename_attribute) =
+                                    &attribute.data
+                                {
                                     let filename = &filename_attribute.name;
                                     if !filename.is_empty()
                                         && !filename.starts_with('$')
@@ -490,7 +517,10 @@ impl MftSummaryApp {
                             }
                             Err(attr_error) => {
                                 // Attribute parsing error - collect it but still count entry as valid
-                                let error_line = AnalysisProgress::create_styled_error("attribute", format!("{}", attr_error));
+                                let error_line = AnalysisProgress::create_styled_error(
+                                    "attribute",
+                                    format!("{}", attr_error),
+                                );
                                 let _ = sender.send(ProgressMessage::ParseError(error_line));
                             }
                         }
@@ -499,7 +529,8 @@ impl MftSummaryApp {
                 }
                 Err(entry_error) => {
                     // Entry parsing error
-                    let error_line = AnalysisProgress::create_styled_error("entry", format!("{}", entry_error));
+                    let error_line =
+                        AnalysisProgress::create_styled_error("entry", format!("{}", entry_error));
                     let _ = sender.send(ProgressMessage::ParseError(error_line));
                     false
                 }
@@ -573,8 +604,22 @@ impl Widget for &mut MftSummaryApp {
             buffer,
             self.text_scroll_position,
             &mut self.text_scroll_state,
+            self.show_legend,
         );
         self.render_footer(footer_area, buffer);
+
+        #[cfg(debug_assertions)]
+        {
+            // Render debug dimensions at bottom right
+            let dims = format!("{}x{}", area.width, area.height);
+            let debug_style = Style::default().fg(Color::Gray);
+            buffer.set_string(
+                area.x + area.width.saturating_sub(dims.len() as u16),
+                area.y + area.height - 1,
+                &dims,
+                debug_style,
+            );
+        }
     }
 }
 
@@ -604,14 +649,17 @@ impl MftSummaryApp {
     fn render_tabs(&self, area: Rect, buffer: &mut Buffer) {
         let has_errors = self.analysis_progress.has_errors();
         let available_tabs = SelectedTab::available_tabs(has_errors);
-        let titles = available_tabs.iter().map(|tab| tab.title(&self.analysis_progress));
+        let titles = available_tabs
+            .iter()
+            .map(|tab| tab.title(&self.analysis_progress));
         let highlight_style = (Color::White, Color::Blue);
-        
+
         // Find the index of the selected tab in the available tabs list
-        let selected_tab_index = available_tabs.iter()
+        let selected_tab_index = available_tabs
+            .iter()
             .position(|&tab| tab as u8 == self.selected_tab as u8)
             .unwrap_or(0);
-            
+
         Tabs::new(titles)
             .highlight_style(highlight_style)
             .select(selected_tab_index)
@@ -621,12 +669,19 @@ impl MftSummaryApp {
     }
 
     fn render_footer(&self, area: Rect, buffer: &mut Buffer) {
-        let footer_text = if matches!(self.selected_tab, SelectedTab::TextSummary | SelectedTab::Errors) {
-            if matches!(self.selected_tab, SelectedTab::Errors) && self.analysis_progress.errors.len() > 50 {
+        let footer_text = if matches!(
+            self.selected_tab,
+            SelectedTab::TextSummary | SelectedTab::Errors
+        ) {
+            if matches!(self.selected_tab, SelectedTab::Errors)
+                && self.analysis_progress.errors.len() > 50
+            {
                 "◄ ► tab | ▲ ▼ scroll | PgUp PgDn fast | Home End jump | q quit"
             } else {
                 "◄ ► to change tab | ▲ ▼ to scroll | PgUp PgDn for fast scroll | Press q to quit"
             }
+        } else if matches!(self.selected_tab, SelectedTab::Visualization) {
+            "◄ ► to change tab | h to toggle legend | Press q to quit"
         } else {
             "◄ ► to change tab | Press q to quit"
         };
@@ -643,14 +698,17 @@ impl SelectedTab {
         buffer: &mut Buffer,
         text_scroll_position: u16,
         scroll_state: &mut ScrollbarState,
+        show_legend: bool,
     ) {
         match self {
             Self::Progress => self.render_progress_tab(progress, area, buffer),
             Self::TextSummary => {
                 self.render_text_summary(progress, area, buffer, text_scroll_position, scroll_state)
             }
-            Self::Visualization => self.render_visualization(progress, area, buffer),
-            Self::Errors => self.render_errors_tab(progress, area, buffer, text_scroll_position, scroll_state),
+            Self::Visualization => self.render_visualization(progress, area, buffer, show_legend),
+            Self::Errors => {
+                self.render_errors_tab(progress, area, buffer, text_scroll_position, scroll_state)
+            }
         }
     }
 
@@ -709,13 +767,15 @@ impl SelectedTab {
 
         // Show ETA if available
         if let Some(eta) = progress.eta_seconds
-            && eta > 0.0 && !progress.is_complete {
-                let eta_duration = Duration::from_secs_f64(eta);
-                text_content.push(Line::from(vec![
-                    "  ETA: ".into(),
-                    format_duration(eta_duration).to_string().magenta().bold(),
-                ]));
-            }
+            && eta > 0.0
+            && !progress.is_complete
+        {
+            let eta_duration = Duration::from_secs_f64(eta);
+            text_content.push(Line::from(vec![
+                "  ETA: ".into(),
+                format_duration(eta_duration).to_string().magenta().bold(),
+            ]));
+        }
 
         text_content.push(Line::from(""));
 
@@ -809,7 +869,13 @@ impl SelectedTab {
         }
     }
 
-    fn render_visualization(self, progress: &AnalysisProgress, area: Rect, buffer: &mut Buffer) {
+    fn render_visualization(
+        self,
+        progress: &AnalysisProgress,
+        area: Rect,
+        buffer: &mut Buffer,
+        show_legend: bool,
+    ) {
         if progress.entry_statuses.is_empty() {
             Paragraph::new("No data available yet. Processing...")
                 .block(self.block())
@@ -818,7 +884,7 @@ impl SelectedTab {
         }
 
         Canvas::default()
-            .block(self.block().title("Entry Health Visualization"))
+            .block(self.block())
             .marker(Marker::Block)
             .x_bounds([0.0, 100.0])
             .y_bounds([0.0, 50.0])
@@ -831,6 +897,62 @@ impl SelectedTab {
                     (progress.entry_statuses.len() as f64 / total_pixels as f64).ceil() as usize;
                 let entries_per_pixel = entries_per_pixel.max(1);
 
+                // Helper function to get high-fidelity color based on valid ratio
+                let get_color = |valid_ratio: f64| -> Color {
+                    if valid_ratio >= 1.0 {
+                        Color::Rgb(0, 255, 0) // Bright green (100% valid)
+                    } else if valid_ratio >= 0.95 {
+                        Color::Rgb(50, 255, 50) // Light green (95-99% valid)
+                    } else if valid_ratio >= 0.9 {
+                        Color::Rgb(100, 255, 100) // Pale green (90-94% valid)
+                    } else if valid_ratio >= 0.8 {
+                        Color::Rgb(200, 255, 100) // Yellow-green (80-89% valid)
+                    } else if valid_ratio >= 0.7 {
+                        Color::Rgb(255, 255, 0) // Yellow (70-79% valid)
+                    } else if valid_ratio >= 0.6 {
+                        Color::Rgb(255, 200, 0) // Orange-yellow (60-69% valid)
+                    } else if valid_ratio >= 0.5 {
+                        Color::Rgb(255, 150, 0) // Orange (50-59% valid)
+                    } else if valid_ratio >= 0.4 {
+                        Color::Rgb(255, 100, 0) // Red-orange (40-49% valid)
+                    } else if valid_ratio >= 0.3 {
+                        Color::Rgb(255, 50, 0) // Red-orange (30-39% valid)
+                    } else if valid_ratio >= 0.1 {
+                        Color::Rgb(255, 0, 50) // Red (10-29% valid)
+                    } else if valid_ratio > 0.0 {
+                        Color::Rgb(200, 0, 0) // Dark red (1-9% valid)
+                    } else {
+                        Color::Rgb(150, 0, 0) // Very dark red (0% valid)
+                    }
+                };
+
+                // Helper function to get quality score (0-9) based on valid ratio
+                let get_quality_score = |valid_ratio: f64| -> u8 {
+                    if valid_ratio >= 1.0 {
+                        0
+                    } else if valid_ratio >= 0.95 {
+                        1
+                    } else if valid_ratio >= 0.9 {
+                        2
+                    } else if valid_ratio >= 0.8 {
+                        3
+                    } else if valid_ratio >= 0.7 {
+                        4
+                    } else if valid_ratio >= 0.6 {
+                        5
+                    } else if valid_ratio >= 0.5 {
+                        6
+                    } else if valid_ratio >= 0.3 {
+                        7
+                    } else if valid_ratio >= 0.1 {
+                        8
+                    } else {
+                        9
+                    }
+                };
+
+                // First pass: calculate colors and quality scores for all pixels
+                let mut pixel_data = Vec::with_capacity(total_pixels);
                 for pixel_index in 0..total_pixels {
                     let start_entry = pixel_index * entries_per_pixel;
                     let end_entry =
@@ -851,27 +973,25 @@ impl SelectedTab {
                         }
                     }
 
+                    let total_entries_in_pixel = valid_count + invalid_count;
+                    let (color, quality_score) = if total_entries_in_pixel == 0 {
+                        (Color::Black, 0)
+                    } else {
+                        let valid_ratio = valid_count as f64 / total_entries_in_pixel as f64;
+                        (get_color(valid_ratio), get_quality_score(valid_ratio))
+                    };
+
+                    pixel_data.push((color, quality_score));
+                }
+
+                // Second pass: detect contiguous sections and add numbers
+                let mut last_quality_score = None;
+
+                for (pixel_index, &(color, quality_score)) in pixel_data.iter().enumerate() {
                     let pixel_x = pixel_index % canvas_width as usize;
                     let pixel_y = pixel_index / canvas_width as usize;
 
-                    let total_entries_in_pixel = valid_count + invalid_count;
-                    let color = if total_entries_in_pixel == 0 {
-                        Color::Black
-                    } else if invalid_count == 0 {
-                        Color::Green
-                    } else if valid_count == 0 {
-                        Color::Red
-                    } else {
-                        let valid_ratio = valid_count as f64 / total_entries_in_pixel as f64;
-                        if valid_ratio > 0.8 {
-                            Color::Yellow
-                        } else if valid_ratio > 0.5 {
-                            Color::Rgb(255, 165, 0)
-                        } else {
-                            Color::Red
-                        }
-                    };
-
+                    // Draw the pixel
                     context.draw(&Rectangle {
                         x: pixel_x as f64,
                         y: (canvas_height as usize - pixel_y - 1) as f64,
@@ -879,52 +999,43 @@ impl SelectedTab {
                         height: 1.0,
                         color,
                     });
-                }
 
-                if area.height >= 50 {
-                    context.print(2.0, 45.0, "Legend:".white().bold());
-                    context.print(2.0, 43.0, "■ Green = All Valid".green().bold());
-                    context.print(2.0, 41.0, "■ Yellow = Mostly Valid".yellow().bold());
-                    context.print(
-                        2.0,
-                        39.0,
-                        "■ Orange = Mixed".fg(Color::Rgb(255, 165, 0)).bold(),
-                    );
-                    context.print(2.0, 37.0, "■ Red = All Invalid".red().bold());
+                    // Check if this is the start of a new contiguous section
+                    let is_new_section = match last_quality_score {
+                        None => true, // First pixel
+                        Some(last_score) => last_score != quality_score,
+                    };
 
-                    context.print(
-                        2.0,
-                        34.0,
-                        format!("Total: {}", progress.total_entries).white().bold(),
-                    );
-                    context.print(
-                        2.0,
-                        32.0,
-                        format!("Valid: {}", progress.valid_entries).green().bold(),
-                    );
-                    context.print(
-                        2.0,
-                        30.0,
-                        format!("Invalid: {}", progress.error_entries).red().bold(),
-                    );
-                    context.print(
-                        2.0,
-                        28.0,
-                        format!("Entries/pixel: {entries_per_pixel}").cyan(),
-                    );
-                } else {
-                    context.print(
-                        2.0,
-                        45.0,
-                        format!(
-                            "Total: {} Valid: {} Invalid: {}",
-                            progress.total_entries, progress.valid_entries, progress.error_entries
-                        )
-                        .white(),
-                    );
+                    if is_new_section {
+                        // Draw the quality number if the pixel is not black (has data)
+                        if color != Color::Black {
+                            let text_color = if quality_score <= 2 {
+                                Color::Black // Dark text on bright colors
+                            } else {
+                                Color::White // Light text on dark colors
+                            };
+
+                            // Use styled text with explicit background to ensure proper rendering
+                            let styled_number =
+                                quality_score.to_string().fg(text_color).bg(color).bold();
+
+                            context.print(
+                                pixel_x as f64,
+                                (canvas_height as usize - pixel_y - 1) as f64,
+                                styled_number,
+                            );
+                        }
+                    }
+
+                    last_quality_score = Some(quality_score);
                 }
             })
             .render(area, buffer);
+
+        // Render legend as a popup overlay if show_legend is true
+        if show_legend {
+            self.render_legend_popup(progress, area, buffer);
+        }
     }
 
     fn render_progress_tab(self, progress: &AnalysisProgress, area: Rect, buffer: &mut Buffer) {
@@ -974,13 +1085,15 @@ impl SelectedTab {
         )));
 
         if let Some(eta) = progress.eta_seconds
-            && eta > 0.0 && !progress.is_complete {
-                let eta_duration = Duration::from_secs_f64(eta);
-                content.push(Line::from(format!(
-                    "  Estimated time remaining: {}",
-                    format_duration(eta_duration)
-                )));
-            }
+            && eta > 0.0
+            && !progress.is_complete
+        {
+            let eta_duration = Duration::from_secs_f64(eta);
+            content.push(Line::from(format!(
+                "  Estimated time remaining: {}",
+                format_duration(eta_duration)
+            )));
+        }
 
         content.push(Line::from(""));
 
@@ -1065,7 +1178,7 @@ impl SelectedTab {
 
         if progress.errors.is_empty() {
             text_content.push(Line::from("No errors recorded.".green()));
-            
+
             // Simple rendering for no errors case
             Paragraph::new(Text::from(text_content))
                 .block(self.block())
@@ -1074,11 +1187,12 @@ impl SelectedTab {
         }
 
         // Show error count and categorization
-        text_content.push(Line::from(format!(
-            "Total errors encountered: {}",
-            progress.errors.len()
-        ).red().bold()));
-        
+        text_content.push(Line::from(
+            format!("Total errors encountered: {}", progress.errors.len())
+                .red()
+                .bold(),
+        ));
+
         let (critical_count, entry_count, attr_count) = progress.error_summary();
         if critical_count > 0 || entry_count > 0 || attr_count > 0 {
             text_content.push(Line::from("Error breakdown:".cyan()));
@@ -1107,28 +1221,34 @@ impl SelectedTab {
         let visible_height = area.height.saturating_sub(2); // Account for block borders
         let header_lines = text_content.len() as u16; // Header content we always show
         let available_content_height = visible_height.saturating_sub(header_lines);
-        
+
         // Each error takes 2 lines (error + empty line)
         let lines_per_error = 2;
         let visible_errors = (available_content_height / lines_per_error) as usize;
-        
+
         // Calculate which errors to show based on scroll position
         let start_error = (text_scroll_position / lines_per_error) as usize;
         let end_error = (start_error + visible_errors).min(progress.errors.len());
-        
+
         // Limit errors to avoid performance issues - show max 1000 errors at once
         let max_errors_to_show = 1000;
         let actual_end = end_error.min(start_error + max_errors_to_show);
-        
-        // Add visible errors with optimized rendering
+
+        // Add visible errors with complete error messages
         for i in start_error..actual_end {
             if let Some(error) = progress.errors.get(i) {
-                // Optimize: avoid cloning spans, just create a simple numbered line
-                let line_parts = vec![
-                    format!("{}. ", i + 1).red().bold(),
-                    // Only take the first span to avoid expensive operations
-                    error.spans.get(0).map(|s| s.content.as_ref()).unwrap_or("").white(),
-                ];
+                // Create numbered error line
+                let error_number = format!("{}. ", i + 1).red().bold();
+
+                // Reconstruct the complete error message from spans
+                let mut error_message = String::new();
+                for span in &error.spans {
+                    error_message.push_str(&span.content);
+                }
+
+                // Create the complete line with number and message
+                let line_parts = vec![error_number, error_message.white()];
+
                 text_content.push(Line::from(line_parts));
                 text_content.push(Line::from(""));
             }
@@ -1146,7 +1266,9 @@ impl SelectedTab {
                         showing_end,
                         progress.errors.len(),
                         max_errors_to_show
-                    ).cyan().italic()
+                    )
+                    .cyan()
+                    .italic(),
                 ));
             } else {
                 text_content.push(Line::from(
@@ -1155,14 +1277,17 @@ impl SelectedTab {
                         start_error + 1,
                         showing_end,
                         progress.errors.len()
-                    ).cyan().italic()
+                    )
+                    .cyan()
+                    .italic(),
                 ));
             }
         }
 
         // Calculate total virtual content height for scrollbar
-        let total_content_height = header_lines + (progress.errors.len() * lines_per_error as usize) as u16;
-        
+        let total_content_height =
+            header_lines + (progress.errors.len() * lines_per_error as usize) as u16;
+
         // Update scrollbar state with virtual content
         *scroll_state = scroll_state
             .content_length(total_content_height as usize)
@@ -1186,6 +1311,48 @@ impl SelectedTab {
                 .thumb_symbol("█");
             StatefulWidget::render(scrollbar, scrollbar_area, buffer, scroll_state);
         }
+    }
+
+    // Helper function to create a popup area
+    fn popup_area(area: Rect, percent_x: u16, length_y: u16) -> Rect {
+        let vertical = Layout::vertical([Constraint::Length(length_y)]).flex(Flex::Center);
+        let horizontal = Layout::horizontal([Constraint::Percentage(percent_x)]).flex(Flex::Center);
+        let [area] = vertical.areas(area);
+        let [area] = horizontal.areas(area);
+        area
+    }
+
+    // Render the legend as a popup overlay
+    fn render_legend_popup(self, progress: &AnalysisProgress, area: Rect, buffer: &mut Buffer) {
+        // Create popup area - larger for detailed view, smaller for compact view
+        let (popup_width, popup_height) = (70,5);
+
+        let popup_area = Self::popup_area(area, popup_width, popup_height);
+
+        // Clear the background
+        Clear.render(popup_area, buffer);
+
+        // Create legend content
+        let mut legend_content = Vec::new();
+
+        legend_content.push(Line::from(vec![
+            "Quality: 0-2=".into(),
+            "Good ".green(),
+            "3-6=".into(),
+            "Fair ".yellow(),
+            "7-9=".into(),
+            "Poor".red(),
+        ]));
+        legend_content.push(Line::from(format!(
+            "Total: {} | Valid: {} | Invalid: {}",
+            progress.total_entries, progress.valid_entries, progress.error_entries
+        )));
+        legend_content.push(Line::from("Press h to hide".cyan()));
+
+        // Render the popup with legend content
+        Paragraph::new(Text::from(legend_content))
+            .block(Block::bordered().title("Legend").border_style(Color::Blue))
+            .render(popup_area, buffer);
     }
 }
 
