@@ -5,6 +5,7 @@ use clap::Args;
 use std::ffi::OsString;
 use std::io::Write;
 
+/// Arguments for checking elevation status
 #[derive(Args, Clone, Arbitrary, PartialEq, Debug)]
 pub struct ElevationCheckArgs {}
 

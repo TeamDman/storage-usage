@@ -14,6 +14,7 @@ use std::ffi::OsString;
 use tracing::info;
 use tracing::warn;
 
+/// Arguments for testing elevation functionality
 #[derive(Args, Clone, Arbitrary, PartialEq, Debug)]
 pub struct ElevationTestArgs {}
 

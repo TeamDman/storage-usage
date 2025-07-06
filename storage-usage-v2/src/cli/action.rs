@@ -5,9 +5,12 @@ use arbitrary::Arbitrary;
 use clap::Subcommand;
 use std::ffi::OsString;
 
+/// Main application commands
 #[derive(Subcommand, Arbitrary, PartialEq, Debug)]
 pub enum Action {
+    /// NTFS Master File Table operations
     Mft(MftArgs),
+    /// Administrative privilege elevation utilities
     Elevation(ElevationArgs),
 }
 

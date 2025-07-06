@@ -8,6 +8,7 @@ use clap::Args;
 use clap::Subcommand;
 use std::ffi::OsString;
 
+/// MFT command arguments container
 #[derive(Args, Arbitrary, PartialEq, Debug)]
 pub struct MftArgs {
     #[clap(subcommand)]
@@ -26,11 +27,16 @@ impl ToArgs for MftArgs {
     }
 }
 
+/// MFT-specific operations
 #[derive(Subcommand, Clone, Arbitrary, PartialEq, Debug)]
 pub enum MftAction {
+    /// Extract the complete Master File Table from an NTFS drive
     Dump(MftDumpArgs),
+    /// Compare two MFT files to find differences
     Diff(MftDiffArgs),
+    /// Generate statistical summary of an MFT file
     Summarize(MftSummarizeArgs),
+    /// Search for specific files or patterns within an MFT
     Query(MftQueryArgs),
 }
 

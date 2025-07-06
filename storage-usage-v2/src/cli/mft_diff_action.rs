@@ -4,6 +4,7 @@ use clap::Args;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+/// Arguments for comparing two MFT files
 #[derive(Args, Clone, PartialEq, Debug, Arbitrary)]
 pub struct MftDiffArgs {
     #[clap(help = "First MFT file to compare")]

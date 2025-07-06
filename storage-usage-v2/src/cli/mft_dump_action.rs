@@ -4,8 +4,10 @@ use clap::Args;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+/// Arguments for dumping MFT from an NTFS drive
 #[derive(Args, Clone, PartialEq, Debug)]
 pub struct MftDumpArgs {
+    /// Path where the MFT dump file will be saved
     pub output_path: PathBuf,
 
     #[clap(long, help = "Overwrite existing output file")]

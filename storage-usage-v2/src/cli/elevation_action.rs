@@ -6,6 +6,7 @@ use clap::Args;
 use clap::Subcommand;
 use std::ffi::OsString;
 
+/// Elevation command arguments container
 #[derive(Args, Arbitrary, PartialEq, Debug)]
 pub struct ElevationArgs {
     #[clap(subcommand)]
@@ -24,9 +25,12 @@ impl ToArgs for ElevationArgs {
     }
 }
 
+/// Administrative privilege operations
 #[derive(Subcommand, Clone, Arbitrary, PartialEq, Debug)]
 pub enum ElevationAction {
+    /// Check if the current process is running with administrator privileges
     Check(ElevationCheckArgs),
+    /// Test elevation functionality by relaunching with administrator privileges
     Test(ElevationTestArgs),
 }
 

@@ -4,6 +4,7 @@ use clap::Args;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+/// Arguments for generating MFT statistics and summary
 #[derive(Args, Clone, PartialEq, Debug, Arbitrary)]
 pub struct MftSummarizeArgs {
     #[clap(help = "Path to the MFT file to summarize")]

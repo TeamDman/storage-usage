@@ -4,6 +4,7 @@ use clap::Args;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+/// Arguments for searching files within an MFT
 #[derive(Args, Clone, PartialEq, Debug, Arbitrary)]
 pub struct MftQueryArgs {
     #[clap(help = "Path to the MFT file to query")]
