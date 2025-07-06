@@ -315,7 +315,7 @@ impl MftSummaryApp {
     fn new(mft_file: PathBuf) -> Self {
         Self {
             mft_file,
-            show_legend: true,
+            show_legend: false,
             ..Default::default()
         }
     }
@@ -337,11 +337,7 @@ impl MftSummaryApp {
 
             // Handle events with timeout to allow for progress updates
             // Use longer timeout when there are many errors to reduce UI updates
-            let poll_timeout = if self.analysis_progress.errors.len() > 1000 {
-                Duration::from_millis(200)
-            } else {
-                Duration::from_millis(100)
-            };
+            let poll_timeout = Duration::from_millis(100);
 
             if event::poll(poll_timeout)?
                 && let Event::Key(key) = event::read()?
@@ -883,83 +879,36 @@ impl SelectedTab {
             return;
         }
 
+        // Calculate actual canvas dimensions based on the inner area
+        let inner_area = self.block().inner(area);
+        let canvas_width = inner_area.width as f64;
+        let canvas_height = inner_area.height as f64;
+        
         Canvas::default()
             .block(self.block())
             .marker(Marker::Block)
-            .x_bounds([0.0, 100.0])
-            .y_bounds([0.0, 50.0])
+            .x_bounds([0.0, canvas_width])
+            .y_bounds([0.0, canvas_height])
             .paint(|context| {
-                let canvas_width = 100.0;
-                let canvas_height = 50.0;
                 let total_pixels = (canvas_width * canvas_height) as usize;
 
-                let entries_per_pixel =
-                    (progress.entry_statuses.len() as f64 / total_pixels as f64).ceil() as usize;
+                let entries_per_pixel = if total_pixels > 0 {
+                    (progress.entry_statuses.len() as f64 / total_pixels as f64).ceil() as usize
+                } else {
+                    1
+                };
                 let entries_per_pixel = entries_per_pixel.max(1);
 
-                // Helper function to get high-fidelity color based on valid ratio
-                let get_color = |valid_ratio: f64| -> Color {
-                    if valid_ratio >= 1.0 {
-                        Color::Rgb(0, 255, 0) // Bright green (100% valid)
-                    } else if valid_ratio >= 0.95 {
-                        Color::Rgb(50, 255, 50) // Light green (95-99% valid)
-                    } else if valid_ratio >= 0.9 {
-                        Color::Rgb(100, 255, 100) // Pale green (90-94% valid)
-                    } else if valid_ratio >= 0.8 {
-                        Color::Rgb(200, 255, 100) // Yellow-green (80-89% valid)
-                    } else if valid_ratio >= 0.7 {
-                        Color::Rgb(255, 255, 0) // Yellow (70-79% valid)
-                    } else if valid_ratio >= 0.6 {
-                        Color::Rgb(255, 200, 0) // Orange-yellow (60-69% valid)
-                    } else if valid_ratio >= 0.5 {
-                        Color::Rgb(255, 150, 0) // Orange (50-59% valid)
-                    } else if valid_ratio >= 0.4 {
-                        Color::Rgb(255, 100, 0) // Red-orange (40-49% valid)
-                    } else if valid_ratio >= 0.3 {
-                        Color::Rgb(255, 50, 0) // Red-orange (30-39% valid)
-                    } else if valid_ratio >= 0.1 {
-                        Color::Rgb(255, 0, 50) // Red (10-29% valid)
-                    } else if valid_ratio > 0.0 {
-                        Color::Rgb(200, 0, 0) // Dark red (1-9% valid)
-                    } else {
-                        Color::Rgb(150, 0, 0) // Very dark red (0% valid)
-                    }
-                };
-
-                // Helper function to get quality score (0-9) based on valid ratio
-                let get_quality_score = |valid_ratio: f64| -> u8 {
-                    if valid_ratio >= 1.0 {
-                        0
-                    } else if valid_ratio >= 0.95 {
-                        1
-                    } else if valid_ratio >= 0.9 {
-                        2
-                    } else if valid_ratio >= 0.8 {
-                        3
-                    } else if valid_ratio >= 0.7 {
-                        4
-                    } else if valid_ratio >= 0.6 {
-                        5
-                    } else if valid_ratio >= 0.5 {
-                        6
-                    } else if valid_ratio >= 0.3 {
-                        7
-                    } else if valid_ratio >= 0.1 {
-                        8
-                    } else {
-                        9
-                    }
-                };
-
-                // First pass: calculate colors and quality scores for all pixels
+                // Pre-calculate pixel data in a more efficient way
                 let mut pixel_data = Vec::with_capacity(total_pixels);
+                
                 for pixel_index in 0..total_pixels {
                     let start_entry = pixel_index * entries_per_pixel;
-                    let end_entry =
-                        ((pixel_index + 1) * entries_per_pixel).min(progress.entry_statuses.len());
+                    let end_entry = ((pixel_index + 1) * entries_per_pixel).min(progress.entry_statuses.len());
 
                     if start_entry >= progress.entry_statuses.len() {
-                        break;
+                        pixel_data.push((Color::Black, 10)); // Use 10 for empty pixels
+                        continue;
                     }
 
                     let mut valid_count = 0;
@@ -975,23 +924,23 @@ impl SelectedTab {
 
                     let total_entries_in_pixel = valid_count + invalid_count;
                     let (color, quality_score) = if total_entries_in_pixel == 0 {
-                        (Color::Black, 0)
+                        (Color::Black, 10) // Use 10 for empty pixels
                     } else {
                         let valid_ratio = valid_count as f64 / total_entries_in_pixel as f64;
-                        (get_color(valid_ratio), get_quality_score(valid_ratio))
+                        (Self::get_quality_color(valid_ratio), Self::get_quality_score(valid_ratio))
                     };
 
                     pixel_data.push((color, quality_score));
                 }
 
-                // Second pass: detect contiguous sections and add numbers
-                let mut last_quality_score = None;
+                // Render pixels and detect region boundaries for numbering
+                let width_usize = canvas_width as usize;
+                
+                for (pixel_index, &(color, _quality_score)) in pixel_data.iter().enumerate() {
+                    let pixel_x = pixel_index % width_usize;
+                    let pixel_y = pixel_index / width_usize;
 
-                for (pixel_index, &(color, quality_score)) in pixel_data.iter().enumerate() {
-                    let pixel_x = pixel_index % canvas_width as usize;
-                    let pixel_y = pixel_index / canvas_width as usize;
-
-                    // Draw the pixel
+                    // Draw the pixel - flip Y coordinate for proper orientation
                     context.draw(&Rectangle {
                         x: pixel_x as f64,
                         y: (canvas_height as usize - pixel_y - 1) as f64,
@@ -999,35 +948,33 @@ impl SelectedTab {
                         height: 1.0,
                         color,
                     });
+                }
 
-                    // Check if this is the start of a new contiguous section
-                    let is_new_section = match last_quality_score {
-                        None => true, // First pixel
-                        Some(last_score) => last_score != quality_score,
-                    };
-
-                    if is_new_section {
-                        // Draw the quality number if the pixel is not black (has data)
-                        if color != Color::Black {
-                            let text_color = if quality_score <= 2 {
-                                Color::Black // Dark text on bright colors
-                            } else {
-                                Color::White // Light text on dark colors
-                            };
-
-                            // Use styled text with explicit background to ensure proper rendering
-                            let styled_number =
-                                quality_score.to_string().fg(text_color).bg(color).bold();
-
-                            context.print(
-                                pixel_x as f64,
-                                (canvas_height as usize - pixel_y - 1) as f64,
-                                styled_number,
-                            );
-                        }
+                // Second pass: find region start positions and place numbers
+                for (pixel_index, &(color, quality_score)) in pixel_data.iter().enumerate() {
+                    if color == Color::Black || quality_score == 10 {
+                        continue; // Skip empty pixels
                     }
 
-                    last_quality_score = Some(quality_score);
+                    let pixel_x = pixel_index % width_usize;
+                    let pixel_y = pixel_index / width_usize;
+
+                    // Check if this is the top-left corner of a new region
+                    let is_region_start = Self::is_region_start(&pixel_data, pixel_index, width_usize, canvas_height as usize, quality_score);
+
+                    if is_region_start {
+                        let text_color = if quality_score <= 2 {
+                            Color::Black // Dark text on bright colors
+                        } else {
+                            Color::White // Light text on dark colors
+                        };
+
+                        context.print(
+                            pixel_x as f64,
+                            (canvas_height as usize - pixel_y - 1) as f64,
+                            quality_score.to_string().fg(text_color).bold(),
+                        );
+                    }
                 }
             })
             .render(area, buffer);
@@ -1353,6 +1300,93 @@ impl SelectedTab {
         Paragraph::new(Text::from(legend_content))
             .block(Block::bordered().title("Legend").border_style(Color::Blue))
             .render(popup_area, buffer);
+    }
+}
+
+impl SelectedTab {
+    // Helper function to get high-fidelity color based on valid ratio
+    fn get_quality_color(valid_ratio: f64) -> Color {
+        if valid_ratio >= 1.0 {
+            Color::Rgb(0, 255, 0) // Bright green (100% valid)
+        } else if valid_ratio >= 0.95 {
+            Color::Rgb(50, 255, 50) // Light green (95-99% valid)
+        } else if valid_ratio >= 0.9 {
+            Color::Rgb(100, 255, 100) // Pale green (90-94% valid)
+        } else if valid_ratio >= 0.8 {
+            Color::Rgb(200, 255, 100) // Yellow-green (80-89% valid)
+        } else if valid_ratio >= 0.7 {
+            Color::Rgb(255, 255, 0) // Yellow (70-79% valid)
+        } else if valid_ratio >= 0.6 {
+            Color::Rgb(255, 200, 0) // Orange-yellow (60-69% valid)
+        } else if valid_ratio >= 0.5 {
+            Color::Rgb(255, 150, 0) // Orange (50-59% valid)
+        } else if valid_ratio >= 0.4 {
+            Color::Rgb(255, 100, 0) // Red-orange (40-49% valid)
+        } else if valid_ratio >= 0.3 {
+            Color::Rgb(255, 50, 0) // Red-orange (30-39% valid)
+        } else if valid_ratio >= 0.1 {
+            Color::Rgb(255, 0, 50) // Red (10-29% valid)
+        } else if valid_ratio > 0.0 {
+            Color::Rgb(200, 0, 0) // Dark red (1-9% valid)
+        } else {
+            Color::Rgb(150, 0, 0) // Very dark red (0% valid)
+        }
+    }
+
+    // Helper function to get quality score (0-9) based on valid ratio
+    fn get_quality_score(valid_ratio: f64) -> u8 {
+        if valid_ratio >= 1.0 {
+            0
+        } else if valid_ratio >= 0.95 {
+            1
+        } else if valid_ratio >= 0.9 {
+            2
+        } else if valid_ratio >= 0.8 {
+            3
+        } else if valid_ratio >= 0.7 {
+            4
+        } else if valid_ratio >= 0.6 {
+            5
+        } else if valid_ratio >= 0.5 {
+            6
+        } else if valid_ratio >= 0.3 {
+            7
+        } else if valid_ratio >= 0.1 {
+            8
+        } else {
+            9
+        }
+    }
+
+    // Helper function to determine if a pixel is the start of a new region (top-left corner)
+    fn is_region_start(
+        pixel_data: &[(Color, u8)],
+        pixel_index: usize,
+        width: usize,
+        _height: usize,
+        current_quality: u8,
+    ) -> bool {
+        let x = pixel_index % width;
+        let y = pixel_index / width;
+
+        // Check if pixel above has different quality (or is out of bounds)
+        let above_different = if y == 0 {
+            true // Top row
+        } else {
+            let above_index = (y - 1) * width + x;
+            pixel_data.get(above_index).map_or(true, |&(_, q)| q != current_quality)
+        };
+
+        // Check if pixel to the left has different quality (or is out of bounds)
+        let left_different = if x == 0 {
+            true // Left column
+        } else {
+            let left_index = y * width + (x - 1);
+            pixel_data.get(left_index).map_or(true, |&(_, q)| q != current_quality)
+        };
+
+        // It's a region start if both above and left are different quality (or boundaries)
+        above_different && left_different
     }
 }
 
