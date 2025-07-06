@@ -484,7 +484,6 @@ impl MftSummaryApp {
             let estimated_entries = (file_size / 1024) as usize;
             let _ = sender.send(ProgressMessage::EstimatedTotal(estimated_entries));
         }
-
         for entry_result in parser.iter_entries() {
             let mut filename_found = None;
             let mut attribute_type = None;
