@@ -12,7 +12,6 @@ use ratatui::layout::Flex;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::symbols::Marker;
 use ratatui::symbols::{self};
@@ -238,6 +237,7 @@ struct MftSummaryApp {
     text_scroll_state: ScrollbarState,
     last_text_area_height: u16,
     show_legend: bool,
+    is_paused: bool,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -289,10 +289,11 @@ impl SelectedTab {
         }
     }
 
-    fn title(self, progress: &AnalysisProgress) -> Line<'static> {
+    fn title(self, progress: &AnalysisProgress, is_paused: bool) -> Line<'static> {
         let title_text = match self {
             Self::Progress if !progress.is_complete => {
-                format!("  Progress ({}%)  ", progress.progress_percentage())
+                let pause_indicator = if is_paused { " [PAUSED]" } else { "" };
+                format!("  Progress ({}%){pause_indicator}  ", progress.progress_percentage())
             }
             Self::Errors if progress.has_errors() => {
                 format!("  Errors ({})  ", progress.errors.len())
@@ -316,6 +317,7 @@ impl MftSummaryApp {
         Self {
             mft_file,
             show_legend: false,
+            is_paused: false,
             ..Default::default()
         }
     }
@@ -351,6 +353,9 @@ impl MftSummaryApp {
                         self.show_legend = !self.show_legend;
                     }
                     KeyCode::Char('h') | KeyCode::Left => self.previous_tab(),
+                    KeyCode::Char('p') => {
+                        self.is_paused = !self.is_paused;
+                    }
                     KeyCode::Char('j') | KeyCode::Down => {
                         if matches!(
                             self.selected_tab,
@@ -550,10 +555,12 @@ impl MftSummaryApp {
     }
 
     fn update_progress(&mut self) {
-        if let Some(receiver) = &self.progress_receiver {
-            // Process all available messages without blocking
-            while let Ok(message) = receiver.try_recv() {
-                self.analysis_progress.update_with_message(message);
+        if !self.is_paused {
+            if let Some(receiver) = &self.progress_receiver {
+                // Process all available messages without blocking
+                while let Ok(message) = receiver.try_recv() {
+                    self.analysis_progress.update_with_message(message);
+                }
             }
         }
     }
@@ -608,7 +615,7 @@ impl Widget for &mut MftSummaryApp {
         {
             // Render debug dimensions at bottom right
             let dims = format!("{}x{}", area.width, area.height);
-            let debug_style = Style::default().fg(Color::Gray);
+            let debug_style = ratatui::style::Style::default().fg(Color::Gray);
             buffer.set_string(
                 area.x + area.width.saturating_sub(dims.len() as u16),
                 area.y + area.height - 1,
@@ -647,7 +654,7 @@ impl MftSummaryApp {
         let available_tabs = SelectedTab::available_tabs(has_errors);
         let titles = available_tabs
             .iter()
-            .map(|tab| tab.title(&self.analysis_progress));
+            .map(|tab| tab.title(&self.analysis_progress, self.is_paused));
         let highlight_style = (Color::White, Color::Blue);
 
         // Find the index of the selected tab in the available tabs list
@@ -665,21 +672,29 @@ impl MftSummaryApp {
     }
 
     fn render_footer(&self, area: Rect, buffer: &mut Buffer) {
-        let footer_text = if matches!(
+        // Determine base footer text
+        let base_footer = if matches!(
             self.selected_tab,
             SelectedTab::TextSummary | SelectedTab::Errors
         ) {
             if matches!(self.selected_tab, SelectedTab::Errors)
                 && self.analysis_progress.errors.len() > 50
             {
-                "◄ ► tab | ▲ ▼ scroll | PgUp PgDn fast | Home End jump | q quit"
+                "◄ ► tab | ▲ ▼ scroll | PgUp PgDn fast | Home End jump | p pause | q quit"
             } else {
-                "◄ ► to change tab | ▲ ▼ to scroll | PgUp PgDn for fast scroll | Press q to quit"
+                "◄ ► to change tab | ▲ ▼ to scroll | PgUp PgDn for fast scroll | p pause | q quit"
             }
         } else if matches!(self.selected_tab, SelectedTab::Visualization) {
-            "◄ ► to change tab | h to toggle legend | Press q to quit"
+            "◄ ► to change tab | h to toggle legend | p pause | q quit"
         } else {
-            "◄ ► to change tab | Press q to quit"
+            "◄ ► to change tab | p pause | q quit"
+        };
+
+        // Add pause status if paused
+        let footer_text = if self.is_paused {
+            format!("{} | [PAUSED]", base_footer)
+        } else {
+            base_footer.to_string()
         };
 
         Line::raw(footer_text).centered().render(area, buffer);
