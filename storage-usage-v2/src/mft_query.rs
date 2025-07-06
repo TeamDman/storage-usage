@@ -10,16 +10,24 @@ pub fn query_mft_files(
     full_paths: bool,
 ) -> eyre::Result<()> {
     if extensions.is_empty() {
-        return Err(eyre::eyre!("No search patterns specified. Please provide file extensions (e.g., *.mp4, txt) or literal filenames"));
+        return Err(eyre::eyre!(
+            "No search patterns specified. Please provide file extensions (e.g., *.mp4, txt) or literal filenames"
+        ));
     }
 
     // Process search patterns: distinguish between extensions and literal filename patterns
     let mut extension_patterns = Vec::new();
     let mut literal_patterns = Vec::new();
-    
+
     for pattern in &extensions {
         // If pattern contains no wildcards and has spaces or special chars, treat as literal filename
-        if !pattern.contains('*') && (pattern.contains(' ') || pattern.contains('(') || pattern.contains(')') || pattern.contains('-') || pattern.len() > 10) {
+        if !pattern.contains('*')
+            && (pattern.contains(' ')
+                || pattern.contains('(')
+                || pattern.contains(')')
+                || pattern.contains('-')
+                || pattern.len() > 10)
+        {
             // Literal filename pattern
             let literal = if ignore_case {
                 pattern.to_lowercase()
@@ -41,7 +49,14 @@ pub fn query_mft_files(
 
     println!("Searching for patterns: {}", extensions.join(", "));
     if !extension_patterns.is_empty() {
-        println!("  Extensions: {}", extension_patterns.iter().map(|e| format!("*.{}", e)).collect::<Vec<_>>().join(", "));
+        println!(
+            "  Extensions: {}",
+            extension_patterns
+                .iter()
+                .map(|e| format!("*.{e}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
     if !literal_patterns.is_empty() {
         println!("  Literal filenames: {}", literal_patterns.join(", "));
@@ -54,7 +69,7 @@ pub fn query_mft_files(
 
     // Open and parse the MFT file
     let mut parser = MftParser::from_path(&mft_file)?;
-    
+
     let mut matches_found = 0;
     let mut total_entries = 0;
 
@@ -67,7 +82,9 @@ pub fn query_mft_files(
 
         // Print progress every 50,000 entries
         if total_entries % 50000 == 0 {
-            print!("Processed {} entries, found {} matches...\r", total_entries, matches_found);
+            print!(
+                "Processed {total_entries} entries, found {matches_found} matches...\r"
+            );
             std::io::Write::flush(&mut std::io::stdout()).unwrap_or(());
         }
 
@@ -77,12 +94,16 @@ pub fn query_mft_files(
 
         if let Ok(entry) = entry_result {
             for attribute_result in entry.iter_attributes() {
-                if let Ok(attribute) = attribute_result {
-                    if let MftAttributeContent::AttrX30(filename_attr) = &attribute.data {
+                if let Ok(attribute) = attribute_result
+                    && let MftAttributeContent::AttrX30(filename_attr) = &attribute.data {
                         let filename = &filename_attr.name;
-                        
+
                         // Skip system files, directories, and very short names
-                        if filename.starts_with('$') || filename.len() <= 2 || filename == "." || filename == ".." {
+                        if filename.starts_with('$')
+                            || filename.len() <= 2
+                            || filename == "."
+                            || filename == ".."
+                        {
                             continue;
                         }
 
@@ -98,24 +119,22 @@ pub fn query_mft_files(
                             if ext.is_empty() {
                                 false
                             } else {
-                                filename_to_check.ends_with(&format!(".{}", ext))
+                                filename_to_check.ends_with(&format!(".{ext}"))
                             }
                         });
-                        
+
                         // Check literal patterns (exact filename match)
-                        let matches_literal = literal_patterns.iter().any(|pattern| {
-                            filename_to_check == *pattern
-                        });
+                        let matches_literal = literal_patterns.contains(&filename_to_check);
 
                         if matches_extension || matches_literal {
                             matches_found += 1;
-                            
+
                             if full_paths {
                                 // For now, just show the filename with a path prefix
                                 // Full reconstruction would require more robust MFT parsing
-                                println!("\\{}", filename);
+                                println!("\\{filename}");
                             } else {
-                                println!("{}", filename);
+                                println!("{filename}");
                             }
 
                             if matches_found >= limit {
@@ -123,7 +142,6 @@ pub fn query_mft_files(
                             }
                         }
                     }
-                }
             }
         }
     }
@@ -133,12 +151,14 @@ pub fn query_mft_files(
 
     if matches_found == 0 {
         println!("No files found matching the specified extensions.");
-        println!("Searched {} entries total.", total_entries);
+        println!("Searched {total_entries} entries total.");
     } else {
         println!();
-        println!("Found {} files matching the specified extensions (limit: {}).", matches_found, limit);
-        println!("Searched {} entries total.", total_entries);
-        
+        println!(
+            "Found {matches_found} files matching the specified extensions (limit: {limit})."
+        );
+        println!("Searched {total_entries} entries total.");
+
         if matches_found == limit {
             println!("Note: Result limit reached. There may be more matching files.");
         }

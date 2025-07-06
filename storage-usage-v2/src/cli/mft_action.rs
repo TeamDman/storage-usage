@@ -1,7 +1,7 @@
-use crate::cli::mft_dump_action::MftDumpArgs;
 use crate::cli::mft_diff_action::MftDiffArgs;
-use crate::cli::mft_summarize_action::MftSummarizeArgs;
+use crate::cli::mft_dump_action::MftDumpArgs;
 use crate::cli::mft_query_action::MftQueryArgs;
+use crate::cli::mft_summarize_action::MftSummarizeArgs;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
 use clap::Args;

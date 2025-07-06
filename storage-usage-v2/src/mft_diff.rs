@@ -1,5 +1,6 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
+use std::io::Read;
 use std::path::PathBuf;
 
 pub fn diff_mft_files(
@@ -23,14 +24,17 @@ pub fn diff_mft_files(
     // Get file sizes
     let metadata1 = std::fs::metadata(&file1)?;
     let metadata2 = std::fs::metadata(&file2)?;
-    
+
     let size1 = metadata1.len();
     let size2 = metadata2.len();
-    
+
     println!("File sizes:");
-    println!("  File 1: {} bytes", size1);
-    println!("  File 2: {} bytes", size2);
-    println!("  Difference: {} bytes", (size1 as i64 - size2 as i64).abs());
+    println!("  File 1: {size1} bytes");
+    println!("  File 2: {size2} bytes");
+    println!(
+        "  Difference: {} bytes",
+        (size1 as i64 - size2 as i64).abs()
+    );
     println!();
 
     // Read files in chunks and compare
@@ -49,10 +53,14 @@ pub fn diff_mft_files(
         if bytes_read1 != bytes_read2 {
             let shorter_file = if bytes_read1 < bytes_read2 { 1 } else { 2 };
             let longer_file = if bytes_read1 < bytes_read2 { 2 } else { 1 };
-            
+
             println!("Files differ in length:");
-            println!("  File {} ends at position {}", shorter_file, position + bytes_read1.min(bytes_read2) as u64);
-            println!("  File {} continues beyond this point", longer_file);
+            println!(
+                "  File {} ends at position {}",
+                shorter_file,
+                position + bytes_read1.min(bytes_read2) as u64
+            );
+            println!("  File {longer_file} continues beyond this point");
             break;
         }
 
@@ -65,7 +73,7 @@ pub fn diff_mft_files(
         for i in 0..bytes_read1 {
             if buffer1[i] != buffer2[i] {
                 let byte_position = position + i as u64;
-                
+
                 if first_difference.is_none() {
                     first_difference = Some(byte_position);
                 }
@@ -76,19 +84,25 @@ pub fn diff_mft_files(
                         byte_position, buffer1[i], buffer2[i], buffer1[i], buffer2[i]
                     );
                 }
-                
+
                 differences_found += 1;
-                
+
                 if differences_found >= max_diffs_to_show && verbose {
-                    println!("... and {} more differences (use --max-diffs to see more)", 
-                           count_remaining_differences(&mut reader1, &mut reader2, position + bytes_read1 as u64)?);
+                    println!(
+                        "... and {} more differences (use --max-diffs to see more)",
+                        count_remaining_differences(
+                            &mut reader1,
+                            &mut reader2,
+                            position + bytes_read1 as u64
+                        )?
+                    );
                     break;
                 }
             }
         }
 
         position += bytes_read1 as u64;
-        
+
         // Early exit if we've found enough differences and not in verbose mode
         if !verbose && differences_found > 0 {
             break;
@@ -100,11 +114,14 @@ pub fn diff_mft_files(
         println!("  Files are identical!");
     } else {
         if let Some(first_diff_pos) = first_difference {
-            println!("  First difference at byte: {}", first_diff_pos);
-            println!("  As percentage of file: {:.2}%", (first_diff_pos as f64 / size1.min(size2) as f64) * 100.0);
+            println!("  First difference at byte: {first_diff_pos}");
+            println!(
+                "  As percentage of file: {:.2}%",
+                (first_diff_pos as f64 / size1.min(size2) as f64) * 100.0
+            );
         }
-        println!("  Total differences found: {}", differences_found);
-        
+        println!("  Total differences found: {differences_found}");
+
         if differences_found == 1 {
             println!("  Files are very similar (only 1 byte differs)");
         } else if first_difference.unwrap_or(0) < 1024 {
@@ -132,7 +149,7 @@ fn count_remaining_differences(
 
         if bytes_read1 != bytes_read2 {
             // Files differ in length, count as many differences as the extra bytes
-            remaining_diffs += (bytes_read1 as i32 - bytes_read2 as i32).abs() as usize;
+            remaining_diffs += (bytes_read1 as i32 - bytes_read2 as i32).unsigned_abs() as usize;
             break;
         }
 

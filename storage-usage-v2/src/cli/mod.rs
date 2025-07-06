@@ -12,10 +12,10 @@ pub mod elevation_check_action;
 pub mod elevation_test_action;
 pub mod global_args;
 pub mod mft_action;
-pub mod mft_dump_action;
 pub mod mft_diff_action;
-pub mod mft_summarize_action;
+pub mod mft_dump_action;
 pub mod mft_query_action;
+pub mod mft_summarize_action;
 
 #[derive(Parser, Arbitrary, PartialEq, Debug)]
 #[clap(version)]
@@ -134,11 +134,13 @@ mod tests {
     fn test_specific_cli_cases() {
         // Test specific cases that should work
         use crate::cli::action::Action;
-        use crate::cli::elevation_action::{ElevationAction, ElevationArgs};
+        use crate::cli::elevation_action::ElevationAction;
+        use crate::cli::elevation_action::ElevationArgs;
         use crate::cli::elevation_check_action::ElevationCheckArgs;
         use crate::cli::elevation_test_action::ElevationTestArgs;
         use crate::cli::global_args::GlobalArgs;
-        use crate::cli::mft_action::{MftAction, MftArgs};
+        use crate::cli::mft_action::MftAction;
+        use crate::cli::mft_action::MftArgs;
         use crate::cli::mft_dump_action::MftDumpArgs;
 
         let test_cases = vec![

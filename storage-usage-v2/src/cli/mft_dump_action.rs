@@ -10,8 +10,13 @@ pub struct MftDumpArgs {
 
     #[clap(long, help = "Overwrite existing output file")]
     pub overwrite_existing: bool,
-    
-    #[clap(long, short = 'd', default_value = "C", help = "Drive letter to dump MFT from")]
+
+    #[clap(
+        long,
+        short = 'd',
+        default_value = "C",
+        help = "Drive letter to dump MFT from"
+    )]
     pub drive_letter: char,
 }
 
@@ -30,7 +35,7 @@ impl<'a> Arbitrary<'a> for MftDumpArgs {
                 })
                 .collect();
             let path_str: String = path_chars.into_iter().collect();
-            format!("test_{}.txt", path_str).into()
+            format!("test_{path_str}.txt").into()
         };
 
         // Generate a random boolean for overwrite_existing
@@ -52,7 +57,11 @@ impl<'a> Arbitrary<'a> for MftDumpArgs {
 
 impl MftDumpArgs {
     pub fn run(self) -> eyre::Result<()> {
-        crate::mft_dump::dump_mft_to_file(self.output_path, self.overwrite_existing, self.drive_letter)
+        crate::mft_dump::dump_mft_to_file(
+            self.output_path,
+            self.overwrite_existing,
+            self.drive_letter,
+        )
     }
 }
 

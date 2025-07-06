@@ -12,7 +12,11 @@ pub struct MftQueryArgs {
     #[clap(help = "File extensions (e.g., *.mp4, txt) or literal filenames to search for")]
     pub extensions: Vec<String>,
 
-    #[clap(long, default_value = "100", help = "Maximum number of results to return")]
+    #[clap(
+        long,
+        default_value = "100",
+        help = "Maximum number of results to return"
+    )]
     pub limit: usize,
 
     #[clap(long, help = "Case-insensitive matching")]
@@ -38,17 +42,17 @@ impl ToArgs for MftQueryArgs {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
         args.push(self.mft_file.as_os_str().into());
-        
+
         // Add extensions
         for ext in &self.extensions {
             args.push(ext.into());
         }
-        
+
         if self.limit != 100 {
             args.push("--limit".into());
             args.push(self.limit.to_string().into());
         }
-        
+
         if self.ignore_case {
             args.push("--ignore-case".into());
         }
@@ -56,7 +60,7 @@ impl ToArgs for MftQueryArgs {
         if self.full_paths {
             args.push("--full-paths".into());
         }
-        
+
         args
     }
 }

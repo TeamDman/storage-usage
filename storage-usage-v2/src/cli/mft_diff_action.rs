@@ -30,16 +30,16 @@ impl ToArgs for MftDiffArgs {
         let mut args = Vec::new();
         args.push(self.file1.as_os_str().into());
         args.push(self.file2.as_os_str().into());
-        
+
         if self.verbose {
             args.push("--verbose".into());
         }
-        
+
         if let Some(max_diffs) = self.max_diffs {
             args.push("--max-diffs".into());
             args.push(max_diffs.to_string().into());
         }
-        
+
         args
     }
 }
