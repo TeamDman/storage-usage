@@ -181,10 +181,12 @@ For parsing discontiguous MFT
 
 https://github.com/pitest3141592653/sysMFT/blob/e0b60a040ccdd07337a9715777e455a82f64b216/main.py
 
-
 https://www.futurelearn.com/info/courses/introduction-to-malware-investigations/0/steps/146529
 
 https://learn.microsoft.com/en-us/windows/win32/fileio/master-file-table
+
 https://learn.microsoft.com/en-us/windows/win32/devnotes/master-file-table
+
 https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/ntfs-reserves-space-for-mft
+
 https://github.com/libyal/libfsntfs/blob/82181db7c9f272f98257cf3576243d9ccbbe8823/documentation/New%20Technologies%20File%20System%20(NTFS).asciidoc
