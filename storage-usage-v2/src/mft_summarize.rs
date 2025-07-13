@@ -27,6 +27,7 @@ use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::StatefulWidget;
 use ratatui::widgets::Tabs;
 use ratatui::widgets::Widget;
+use tracing::info;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -475,7 +476,12 @@ impl MftSummaryApp {
         mft_file: PathBuf,
         sender: mpsc::Sender<ProgressMessage>,
     ) -> eyre::Result<()> {
-        let mut parser = MftParser::from_path(&mft_file)?;
+        info!("Reading MFT file: {}", mft_file.display());
+        let data = std::fs::read(&mft_file)
+            .map_err(|e| eyre::eyre!("Failed to read MFT file: {}", e))?;
+
+        // let mut parser = MftParser::from_path(&mft_file)?;
+        let mut parser = MftParser::from_buffer(data)?;
 
         // Try to estimate total entries by file size (rough estimate)
         if let Ok(metadata) = std::fs::metadata(&mft_file) {
