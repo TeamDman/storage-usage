@@ -66,13 +66,6 @@ pub fn process_mft_bytes(
     mft_bytes: Vec<u8>,
     tx: std::sync::mpsc::Sender<MainboundMessage>,
 ) -> eyre::Result<()> {
-    // for (size, entry) in MftEntryIterator::new(mft_bytes) {
-    //     let messages = process_mft_entry(index, size, entry);
-    //     for message in messages {
-    //         tx.send(message)
-    //             .map_err(|e| eyre::eyre!("Failed to send message: {}", e))?;
-    //     }
-    // }
     let mut parser = MftParser::from_buffer(mft_bytes)
         .map_err(|e| eyre::eyre!("Failed to parse MFT bytes: {}", e))?;
     let size = parser.entry_size as u64;
@@ -93,14 +86,23 @@ pub fn process_mft_entry(
     entry: mft::err::Result<MftEntry>,
 ) -> Vec<MainboundMessage> {
     let mut rtn = Vec::new();
-    let entry = match entry {
+    match entry {
         Ok(entry) => {
             // Entry parsed successfully
             rtn.push(MainboundMessage::EntryStatus {
                 file_index: index,
                 is_healthy: true,
             });
-            entry
+            if let Some(path) = get_path_from_entry(&entry) {
+                rtn.push(MainboundMessage::DiscoveredFiles {
+                    file_index: index,
+                    files: vec![path],
+                });
+            }
+            rtn.push(MainboundMessage::Progress {
+                file_index: index,
+                processed_size: entry_size,
+            });
         }
         Err(e) => {
             // Entry parsing failed
@@ -119,16 +121,6 @@ pub fn process_mft_entry(
             return rtn;
         }
     };
-    if let Some(path) = get_path_from_entry(&entry) {
-        rtn.push(MainboundMessage::DiscoveredFiles {
-            file_index: index,
-            files: vec![path],
-        });
-    }
-    rtn.push(MainboundMessage::Progress {
-        file_index: index,
-        processed_size: entry_size,
-    });
     rtn
 }
 
