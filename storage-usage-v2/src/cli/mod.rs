@@ -151,9 +151,9 @@ mod tests {
                 },
                 action: Action::Mft(MftArgs {
                     action: MftAction::Dump(MftDumpArgs {
+                        drive_letters: "C".to_string(),
                         output_path: "test_output.bin".into(),
                         overwrite_existing: false,
-                        drive_letter: 'C',
                     }),
                 }),
             },
@@ -164,9 +164,9 @@ mod tests {
                 },
                 action: Action::Mft(MftArgs {
                     action: MftAction::Dump(MftDumpArgs {
+                        drive_letters: "D".to_string(),
                         output_path: "another_output.bin".into(),
                         overwrite_existing: true,
-                        drive_letter: 'D',
                     }),
                 }),
             },
