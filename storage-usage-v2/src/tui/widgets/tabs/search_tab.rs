@@ -1,11 +1,14 @@
 use crate::tui::progress::MftFileProgress;
 use crate::tui::widgets::tabs::keyboard_response::KeyboardResponse;
+use nucleo::Nucleo;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Span, Line};
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::List;
@@ -13,19 +16,44 @@ use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
+
+#[derive(Clone)]
+struct FileEntry {
+    path: PathBuf,
+    display_name: String,
+    full_path: String,
+}
 
 pub struct SearchTab {
     search_query: String,
-    filtered_files: Vec<PathBuf>,
     scroll_offset: usize,
+    selected_index: usize,
+    matcher: Nucleo<FileEntry>,
+    last_file_count: usize,
+    last_update: Instant,
+    visible_height: usize,
 }
 
 impl SearchTab {
     pub fn new() -> Self {
+        let config = nucleo::Config::DEFAULT;
+        let matcher = Nucleo::new(
+            config,
+            Arc::new(|| {}), // notify callback - we'll handle updates in render
+            None,  // use default number of threads
+            1,     // single column for matching
+        );
+
         Self {
             search_query: String::new(),
-            filtered_files: Vec::new(),
             scroll_offset: 0,
+            selected_index: 0,
+            matcher,
+            last_file_count: 0,
+            last_update: Instant::now(),
+            visible_height: 20, // default, will be updated in render
         }
     }
 
@@ -33,34 +61,81 @@ impl SearchTab {
         match event.code {
             KeyCode::Char(c) => {
                 self.search_query.push(c);
-                self.scroll_offset = 0; // Reset scroll when search changes
+                self.scroll_offset = 0;
+                self.selected_index = 0;
+                self.update_search();
                 KeyboardResponse::Consume
             }
             KeyCode::Backspace => {
                 self.search_query.pop();
                 self.scroll_offset = 0;
+                self.selected_index = 0;
+                self.update_search();
                 KeyboardResponse::Consume
             }
             KeyCode::Up => {
-                if self.scroll_offset > 0 {
-                    self.scroll_offset -= 1;
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                    if self.selected_index < self.scroll_offset {
+                        self.scroll_offset = self.selected_index;
+                    }
                 }
                 KeyboardResponse::Consume
             }
             KeyCode::Down => {
-                self.scroll_offset += 1; // Will be clamped in render
+                let snapshot = self.matcher.snapshot();
+                let matched_count = snapshot.matched_item_count() as usize;
+                if matched_count > 0 && self.selected_index < matched_count - 1 {
+                    self.selected_index += 1;
+                    if self.selected_index >= self.scroll_offset + self.visible_height {
+                        self.scroll_offset = self.selected_index.saturating_sub(self.visible_height - 1);
+                    }
+                }
                 KeyboardResponse::Consume
             }
             KeyCode::PageUp => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(10);
+                self.selected_index = self.selected_index.saturating_sub(self.visible_height);
+                self.scroll_offset = self.scroll_offset.saturating_sub(self.visible_height);
                 KeyboardResponse::Consume
             }
             KeyCode::PageDown => {
-                self.scroll_offset += 10; // Will be clamped in render
+                let snapshot = self.matcher.snapshot();
+                let matched_count = snapshot.matched_item_count() as usize;
+                if matched_count > 0 {
+                    self.selected_index = (self.selected_index + self.visible_height).min(matched_count - 1);
+                    if self.selected_index >= self.scroll_offset + self.visible_height {
+                        self.scroll_offset = self.selected_index.saturating_sub(self.visible_height - 1);
+                    }
+                }
+                KeyboardResponse::Consume
+            }
+            KeyCode::Home => {
+                self.selected_index = 0;
+                self.scroll_offset = 0;
+                KeyboardResponse::Consume
+            }
+            KeyCode::End => {
+                let snapshot = self.matcher.snapshot();
+                let matched_count = snapshot.matched_item_count() as usize;
+                if matched_count > 0 {
+                    self.selected_index = matched_count - 1;
+                    self.scroll_offset = matched_count.saturating_sub(self.visible_height);
+                }
                 KeyboardResponse::Consume
             }
             _ => KeyboardResponse::Pass,
         }
+    }
+
+    fn update_search(&mut self) {
+        // Update the pattern for fuzzy matching
+        self.matcher.pattern.reparse(
+            0, // column 0
+            &self.search_query,
+            nucleo::pattern::CaseMatching::Smart,
+            nucleo::pattern::Normalization::Smart,
+            false, // assume new pattern for simplicity
+        );
     }
 
     pub fn render(&mut self, area: Rect, buf: &mut Buffer, mft_files: &[MftFileProgress]) {
@@ -70,14 +145,16 @@ impl SearchTab {
         ]);
         let [search_area, results_area] = layout.areas(area);
 
+        self.visible_height = results_area.height.saturating_sub(2) as usize; // Account for borders
+
         self.render_search_input(search_area, buf);
-        self.update_filtered_files(mft_files);
+        self.update_file_entries(mft_files);
         self.render_search_results(results_area, buf);
     }
 
     fn render_search_input(&self, area: Rect, buf: &mut Buffer) {
         let search_text = format!(
-            "Search: {} (Type to search, ↑↓ to scroll)",
+            "Search: {} (Type to search, ↑↓ to navigate, PgUp/PgDn to scroll)",
             self.search_query
         );
 
@@ -86,57 +163,73 @@ impl SearchTab {
             .render(area, buf);
     }
 
-    fn update_filtered_files(&mut self, mft_files: &[MftFileProgress]) {
-        self.filtered_files.clear();
+    fn update_file_entries(&mut self, mft_files: &[MftFileProgress]) {
+        // Count total files to see if we need to update
+        let total_files: usize = mft_files.iter()
+            .map(|mft| mft.files_within.len())
+            .sum();
 
-        if self.search_query.is_empty() {
-            // Show all files when no search query
-            for file_progress in mft_files {
-                self.filtered_files
-                    .extend(file_progress.files_within.iter().cloned());
-            }
-        } else {
-            // Filter files based on search query
-            let query_lower = self.search_query.to_lowercase();
-            for file_progress in mft_files {
+        // Only update if file count changed or it's been a while since last update
+        let should_update = total_files != self.last_file_count || 
+            self.last_update.elapsed().as_millis() > 500; // Update every 500ms max
+
+        if should_update && total_files > self.last_file_count {
+            let injector = self.matcher.injector();
+            
+            // Add only new files since last update
+            let mut files_added = 0;
+            let mut current_count = 0;
+            
+            'outer: for file_progress in mft_files {
                 for file_path in &file_progress.files_within {
-                    if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
-                        if file_name.to_lowercase().contains(&query_lower) {
-                            self.filtered_files.push(file_path.clone());
-                        }
+                    current_count += 1;
+                    
+                    // Skip files we've already added
+                    if current_count <= self.last_file_count {
+                        continue;
                     }
+                    
+                    let display_name = file_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    
+                    let full_path = file_path.to_string_lossy().to_string();
+                    
+                    let entry = FileEntry {
+                        path: file_path.clone(),
+                        display_name: display_name.clone(),
+                        full_path: full_path.clone(),
+                    };
 
-                    // Also search in full path
-                    if file_path
-                        .to_string_lossy()
-                        .to_lowercase()
-                        .contains(&query_lower)
-                    {
-                        if !self.filtered_files.contains(file_path) {
-                            self.filtered_files.push(file_path.clone());
-                        }
+                    injector.push(entry, |entry, columns| {
+                        // Use filename for primary matching, but include full path for context
+                        columns[0] = format!("{} {}", entry.display_name, entry.full_path).into();
+                    });
+                    
+                    files_added += 1;
+                    
+                    // Batch limit to avoid blocking UI too long
+                    if files_added >= 10000 {
+                        break 'outer;
                     }
                 }
             }
+
+            self.last_file_count = current_count;
+            self.last_update = Instant::now();
         }
+
+        // Tick the matcher to process any pending work
+        self.matcher.tick(10); // 10ms timeout
     }
 
     fn render_search_results(&mut self, area: Rect, buf: &mut Buffer) {
-        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
+        let snapshot = self.matcher.snapshot();
+        let matched_count = snapshot.matched_item_count() as usize;
 
-        // Clamp scroll offset
-        let max_scroll = self.filtered_files.len().saturating_sub(visible_height);
-        self.scroll_offset = self.scroll_offset.min(max_scroll);
-
-        let visible_files = if self.filtered_files.is_empty() {
-            vec![]
-        } else {
-            let start = self.scroll_offset;
-            let end = (start + visible_height).min(self.filtered_files.len());
-            self.filtered_files[start..end].to_vec()
-        };
-
-        if visible_files.is_empty() {
+        if matched_count == 0 {
             let message = if self.search_query.is_empty() {
                 "No files discovered yet. Files will appear here as MFT processing progresses."
             } else {
@@ -147,37 +240,95 @@ impl SearchTab {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(format!("Results (0 files)")),
+                        .title("Results (0 files)"),
                 )
                 .render(area, buf);
-        } else {
-            let items: Vec<ListItem> = visible_files
-                .iter()
-                .map(|path| {
-                    let display_path =
-                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                            if let Some(parent) = path.parent() {
-                                format!("{} ({})", file_name, parent.display())
-                            } else {
-                                file_name.to_string()
-                            }
-                        } else {
-                            path.display().to_string()
-                        };
-
-                    ListItem::new(display_path)
-                })
-                .collect();
-
-            let title = if self.search_query.is_empty() {
-                format!("All Files ({} total)", self.filtered_files.len())
-            } else {
-                format!("Search Results ({} matches)", self.filtered_files.len())
-            };
-
-            List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(title))
-                .render(area, buf);
+            return;
         }
+
+        // Ensure scroll bounds are valid
+        let max_scroll = matched_count.saturating_sub(self.visible_height);
+        self.scroll_offset = self.scroll_offset.min(max_scroll);
+
+        // Ensure selected index is valid
+        self.selected_index = self.selected_index.min(matched_count - 1);
+
+        // Get visible range
+        let start = self.scroll_offset;
+        let end = (start + self.visible_height).min(matched_count);
+        
+        let items: Vec<ListItem> = snapshot
+            .matched_items(start as u32..end as u32)
+            .enumerate()
+            .map(|(idx, item)| {
+                let global_idx = start + idx;
+                let is_selected = global_idx == self.selected_index;
+                
+                let display_path = if let Some(parent) = item.data.path.parent() {
+                    format!("{} ({})", item.data.display_name, parent.display())
+                } else {
+                    item.data.display_name.clone()
+                };
+
+                if !self.search_query.is_empty() {
+                    // Highlight matches if we have a search query
+                    // For now, just use different styling for selected items
+                    let style = if is_selected {
+                        Style::default().fg(Color::Black).bg(Color::Yellow)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    ListItem::new(Line::from(Span::styled(display_path, style)))
+                } else {
+                    let style = if is_selected {
+                        Style::default().fg(Color::Black).bg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(Line::from(Span::styled(display_path, style)))
+                }
+            })
+            .collect();
+
+        let title = if self.search_query.is_empty() {
+            format!("All Files ({} total, {}/{})", 
+                snapshot.item_count(), self.selected_index + 1, matched_count)
+        } else {
+            format!("Search Results ({} matches, {}/{})", 
+                matched_count, self.selected_index + 1, matched_count)
+        };
+
+        List::new(items)
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .render(area, buf);
+    }
+
+    /// Clear all files from the matcher (useful when starting a new MFT scan)
+    pub fn clear_files(&mut self) {
+        // Create a new matcher to clear all data
+        let config = nucleo::Config::DEFAULT;
+        self.matcher = Nucleo::new(
+            config,
+            Arc::new(|| {}),
+            None,
+            1,
+        );
+        self.last_file_count = 0;
+        self.scroll_offset = 0;
+        self.selected_index = 0;
+        self.last_update = Instant::now();
+    }
+
+    /// Get search statistics
+    pub fn get_stats(&self) -> (usize, usize) {
+        let snapshot = self.matcher.snapshot();
+        (snapshot.item_count() as usize, snapshot.matched_item_count() as usize)
+    }
+
+    /// Get the currently selected file path, if any
+    pub fn get_selected_file(&self) -> Option<PathBuf> {
+        let snapshot = self.matcher.snapshot();
+        snapshot.get_matched_item(self.selected_index as u32)
+            .map(|item| item.data.path.clone())
     }
 }
