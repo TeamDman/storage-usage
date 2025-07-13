@@ -476,7 +476,6 @@ impl MftSummaryApp {
         mft_file: PathBuf,
         sender: mpsc::Sender<ProgressMessage>,
     ) -> eyre::Result<()> {
-        info!("Reading MFT file: {}", mft_file.display());
         // let data =
         //     std::fs::read(&mft_file).map_err(|e| eyre::eyre!("Failed to read MFT file: {}", e))?;
         let data = unsafe {
