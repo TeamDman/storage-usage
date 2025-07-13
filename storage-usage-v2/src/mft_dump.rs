@@ -67,8 +67,7 @@ pub fn dump_mft_to_file<P: AsRef<Path>>(
     info!("Program is running with elevated privileges.");
 
     // Enable backup privileges to access system files like $MFT
-    enable_backup_privileges()
-        .with_context(|| "Failed to enable backup privileges")?;
+    enable_backup_privileges().with_context(|| "Failed to enable backup privileges")?;
 
     // Use the provided drive letter
     let drive_letter = drive_letter.to_uppercase().next().unwrap_or('C');
@@ -118,7 +117,10 @@ fn validate_ntfs_filesystem(drive_letter: char) -> eyre::Result<()> {
 
     match result {
         Ok(_) => {
-            info!("✓ Filesystem validation passed: Drive {} is using NTFS", drive_letter);
+            info!(
+                "✓ Filesystem validation passed: Drive {} is using NTFS",
+                drive_letter
+            );
             info!("NTFS Volume Info:");
             // info!("  VolumeSerialNumber: 0x{:X}", volume_data.VolumeSerialNumber);
             info!("  NumberSectors: {}", volume_data.NumberSectors);
@@ -128,12 +130,11 @@ fn validate_ntfs_filesystem(drive_letter: char) -> eyre::Result<()> {
             info!("  BytesPerCluster: {}", volume_data.BytesPerCluster);
             Ok(())
         }
-        Err(e) => {
-            Err(eyre!(
-                "Drive {} does not appear to be using NTFS filesystem. FSCTL_GET_NTFS_VOLUME_DATA failed: {}. MFT dumping is only supported on NTFS volumes.",
-                drive_letter, e
-            ))
-        }
+        Err(e) => Err(eyre!(
+            "Drive {} does not appear to be using NTFS filesystem. FSCTL_GET_NTFS_VOLUME_DATA failed: {}. MFT dumping is only supported on NTFS volumes.",
+            drive_letter,
+            e
+        )),
     }
 }
 
@@ -151,23 +152,24 @@ fn read_mft_from_volume_with_dataruns(drive_letter: char) -> eyre::Result<Vec<u8
 
     // Step 1: Read the boot sector to get NTFS parameters
     let boot_sector = read_boot_sector(*drive_handle)?;
-    
+
     info!("NTFS Boot Sector Info:");
     info!("  Bytes per sector: {}", boot_sector.bytes_per_sector);
     info!("  Sectors per cluster: {}", boot_sector.sectors_per_cluster);
     info!("  MFT cluster number: {}", boot_sector.mft_cluster_number);
-    
-    let bytes_per_cluster = boot_sector.bytes_per_sector as u64 * boot_sector.sectors_per_cluster as u64;
+
+    let bytes_per_cluster =
+        boot_sector.bytes_per_sector as u64 * boot_sector.sectors_per_cluster as u64;
     let mft_location = boot_sector.mft_cluster_number * bytes_per_cluster;
-    
+
     info!("Calculated MFT location: {} bytes", mft_location);
-    
+
     // Step 2: Read the MFT's own record (record 0)
     let mft_record = read_mft_record(*drive_handle, mft_location, 0)?;
-    
+
     // Step 3: Parse the MFT record to find the DATA attribute (0x80)
     let data_runs = parse_mft_record_for_data_attribute(&mft_record)?;
-    
+
     // Step 4: Follow the data runs to read the complete MFT
     read_mft_using_data_runs(*drive_handle, &data_runs, bytes_per_cluster)
 }
@@ -187,7 +189,7 @@ fn read_boot_sector(drive_handle: HANDLE) -> eyre::Result<NtfsBootSector> {
         SetFilePointerEx(drive_handle, 0, None, FILE_BEGIN)
             .with_context(|| "Failed to seek to boot sector")?;
     }
-    
+
     // Read the boot sector (512 bytes)
     let mut boot_sector = vec![0u8; 512];
     let mut bytes_read = 0u32;
@@ -200,19 +202,28 @@ fn read_boot_sector(drive_handle: HANDLE) -> eyre::Result<NtfsBootSector> {
         )
         .with_context(|| "Failed to read boot sector")?;
     }
-    
+
     if bytes_read != 512 {
-        return Err(eyre!("Failed to read complete boot sector: got {} bytes", bytes_read));
+        return Err(eyre!(
+            "Failed to read complete boot sector: got {} bytes",
+            bytes_read
+        ));
     }
-    
+
     // Parse relevant fields from the boot sector
     let bytes_per_sector = u16::from_le_bytes([boot_sector[0x0b], boot_sector[0x0c]]);
     let sectors_per_cluster = boot_sector[0x0d];
     let mft_cluster_number = u64::from_le_bytes([
-        boot_sector[0x30], boot_sector[0x31], boot_sector[0x32], boot_sector[0x33],
-        boot_sector[0x34], boot_sector[0x35], boot_sector[0x36], boot_sector[0x37],
+        boot_sector[0x30],
+        boot_sector[0x31],
+        boot_sector[0x32],
+        boot_sector[0x33],
+        boot_sector[0x34],
+        boot_sector[0x35],
+        boot_sector[0x36],
+        boot_sector[0x37],
     ]);
-    
+
     Ok(NtfsBootSector {
         bytes_per_sector,
         sectors_per_cluster,
@@ -221,17 +232,21 @@ fn read_boot_sector(drive_handle: HANDLE) -> eyre::Result<NtfsBootSector> {
 }
 
 /// Reads a specific MFT record
-fn read_mft_record(drive_handle: HANDLE, mft_location: u64, record_number: u64) -> eyre::Result<Vec<u8>> {
+fn read_mft_record(
+    drive_handle: HANDLE,
+    mft_location: u64,
+    record_number: u64,
+) -> eyre::Result<Vec<u8>> {
     // MFT records are typically 1024 bytes each
     const MFT_RECORD_SIZE: u64 = 1024;
     let record_offset = mft_location + (record_number * MFT_RECORD_SIZE);
-    
+
     // Seek to the record
     unsafe {
         SetFilePointerEx(drive_handle, record_offset as i64, None, FILE_BEGIN)
             .with_context(|| format!("Failed to seek to MFT record {}", record_number))?;
     }
-    
+
     // Read the record
     let mut record = vec![0u8; MFT_RECORD_SIZE as usize];
     let mut bytes_read = 0u32;
@@ -244,17 +259,22 @@ fn read_mft_record(drive_handle: HANDLE, mft_location: u64, record_number: u64) 
         )
         .with_context(|| format!("Failed to read MFT record {}", record_number))?;
     }
-    
+
     if bytes_read != MFT_RECORD_SIZE as u32 {
-        return Err(eyre!("Failed to read complete MFT record: got {} bytes", bytes_read));
+        return Err(eyre!(
+            "Failed to read complete MFT record: got {} bytes",
+            bytes_read
+        ));
     }
-    
+
     // Verify this is a valid MFT record by checking the signature
     if &record[0..4] != b"FILE" {
-        return Err(eyre!("Invalid MFT record signature: expected 'FILE', got '{}'", 
-            String::from_utf8_lossy(&record[0..4])));
+        return Err(eyre!(
+            "Invalid MFT record signature: expected 'FILE', got '{}'",
+            String::from_utf8_lossy(&record[0..4])
+        ));
     }
-    
+
     Ok(record)
 }
 
@@ -270,55 +290,58 @@ fn parse_mft_record_for_data_attribute(record: &[u8]) -> eyre::Result<Vec<DataRu
     // Get the offset to the first attribute (typically at offset 20)
     let attr_offset = u16::from_le_bytes([record[20], record[21]]) as usize;
     let mut read_ptr = attr_offset;
-    
+
     while read_ptr < record.len() {
         // Read attribute header
         if read_ptr + 8 > record.len() {
             break;
         }
-        
+
         let attr_type = u32::from_le_bytes([
-            record[read_ptr], record[read_ptr + 1], 
-            record[read_ptr + 2], record[read_ptr + 3]
+            record[read_ptr],
+            record[read_ptr + 1],
+            record[read_ptr + 2],
+            record[read_ptr + 3],
         ]);
-        
+
         // Check for end marker
         if attr_type == 0xffffffff {
             break;
         }
-        
+
         let attr_length = u32::from_le_bytes([
-            record[read_ptr + 4], record[read_ptr + 5], 
-            record[read_ptr + 6], record[read_ptr + 7]
+            record[read_ptr + 4],
+            record[read_ptr + 5],
+            record[read_ptr + 6],
+            record[read_ptr + 7],
         ]) as usize;
-        
+
         if attr_length == 0 {
             break;
         }
-        
+
         // Check if this is the DATA attribute (0x80)
         if attr_type == 0x80 {
             // Check if it's non-resident (byte at offset 8 should be != 0)
             if read_ptr + 8 < record.len() && record[read_ptr + 8] != 0 {
                 // Get the data runs offset (at offset 32 from attribute start)
                 if read_ptr + 34 <= record.len() {
-                    let run_offset = u16::from_le_bytes([
-                        record[read_ptr + 32], record[read_ptr + 33]
-                    ]) as usize;
-                    
+                    let run_offset =
+                        u16::from_le_bytes([record[read_ptr + 32], record[read_ptr + 33]]) as usize;
+
                     let data_runs_start = read_ptr + run_offset;
                     let data_runs_end = read_ptr + attr_length;
-                    
+
                     if data_runs_start < data_runs_end && data_runs_end <= record.len() {
                         return decode_data_runs(&record[data_runs_start..data_runs_end]);
                     }
                 }
             }
         }
-        
+
         read_ptr += attr_length;
     }
-    
+
     Err(eyre!("Could not find DATA attribute (0x80) in MFT record"))
 }
 
@@ -326,45 +349,45 @@ fn parse_mft_record_for_data_attribute(record: &[u8]) -> eyre::Result<Vec<DataRu
 fn decode_data_runs(data_runs: &[u8]) -> eyre::Result<Vec<DataRun>> {
     let mut runs = Vec::new();
     let mut decode_pos = 0;
-    
+
     while decode_pos < data_runs.len() {
         let header = data_runs[decode_pos];
-        
+
         // End of data runs
         if header == 0 {
             break;
         }
-        
+
         let offset_bytes = (header & 0xf0) >> 4;
         let length_bytes = header & 0x0f;
-        
+
         if offset_bytes == 0 || length_bytes == 0 {
             break;
         }
-        
+
         decode_pos += 1;
-        
+
         // Read length (little-endian)
         if decode_pos + length_bytes as usize > data_runs.len() {
             break;
         }
-        
+
         let mut length = 0u64;
         for i in 0..length_bytes {
             length |= (data_runs[decode_pos + i as usize] as u64) << (i * 8);
         }
         decode_pos += length_bytes as usize;
-        
+
         // Read offset (little-endian, signed)
         if decode_pos + offset_bytes as usize > data_runs.len() {
             break;
         }
-        
+
         let mut cluster = 0i64;
         for i in 0..offset_bytes {
             cluster |= (data_runs[decode_pos + i as usize] as i64) << (i * 8);
         }
-        
+
         // Handle sign extension for the offset
         if offset_bytes > 0 {
             let sign_bit = 1i64 << (offset_bytes * 8 - 1);
@@ -372,33 +395,33 @@ fn decode_data_runs(data_runs: &[u8]) -> eyre::Result<Vec<DataRun>> {
                 cluster |= !((1i64 << (offset_bytes * 8)) - 1);
             }
         }
-        
+
         decode_pos += offset_bytes as usize;
-        
+
         runs.push(DataRun { length, cluster });
     }
-    
+
     Ok(runs)
 }
 
 /// Reads the complete MFT using the parsed data runs
 fn read_mft_using_data_runs(
-    drive_handle: HANDLE, 
-    data_runs: &[DataRun], 
-    bytes_per_cluster: u64
+    drive_handle: HANDLE,
+    data_runs: &[DataRun],
+    bytes_per_cluster: u64,
 ) -> eyre::Result<Vec<u8>> {
     let mut mft_data = Vec::new();
     let mut current_cluster = 0i64;
-    
+
     info!("Found {} data runs for MFT", data_runs.len());
-    
+
     for (i, run) in data_runs.iter().enumerate() {
         // Calculate absolute cluster position
         current_cluster += run.cluster;
-        
+
         let byte_offset = current_cluster as u64 * bytes_per_cluster;
         let byte_length = run.length * bytes_per_cluster;
-        
+
         info!(
             "Data run {}: cluster {} (offset {}), length {} clusters ({})",
             i + 1,
@@ -407,22 +430,29 @@ fn read_mft_using_data_runs(
             run.length,
             humansize::format_size(byte_length, humansize::DECIMAL)
         );
-        
+
         // Seek to the run location
         unsafe {
-            SetFilePointerEx(drive_handle, byte_offset as i64, None, FILE_BEGIN)
-                .with_context(|| format!("Failed to seek to data run {} at offset {}", i + 1, byte_offset))?;
+            SetFilePointerEx(drive_handle, byte_offset as i64, None, FILE_BEGIN).with_context(
+                || {
+                    format!(
+                        "Failed to seek to data run {} at offset {}",
+                        i + 1,
+                        byte_offset
+                    )
+                },
+            )?;
         }
-        
+
         // Read the run data
         let mut run_data = vec![0u8; byte_length as usize];
         let mut total_read = 0;
         let mut offset = 0;
-        
+
         while offset < byte_length {
             let remaining = byte_length - offset;
             let chunk_size = remaining.min(1024 * 1024) as usize; // Read in 1MB chunks
-            
+
             let mut bytes_read = 0u32;
             unsafe {
                 ReadFile(
@@ -431,28 +461,34 @@ fn read_mft_using_data_runs(
                     Some(&mut bytes_read),
                     None,
                 )
-                .with_context(|| format!("Failed to read data run {} at offset {}", i + 1, offset))?;
+                .with_context(|| {
+                    format!("Failed to read data run {} at offset {}", i + 1, offset)
+                })?;
             }
-            
+
             if bytes_read == 0 {
                 break;
             }
-            
+
             offset += bytes_read as u64;
             total_read += bytes_read as u64;
         }
-        
+
         run_data.truncate(total_read as usize);
         mft_data.extend_from_slice(&run_data);
-        
-        info!("Read {} from data run {}", humansize::format_size(total_read, humansize::DECIMAL), i + 1);
+
+        info!(
+            "Read {} from data run {}",
+            humansize::format_size(total_read, humansize::DECIMAL),
+            i + 1
+        );
     }
-    
+
     info!(
         "Successfully read complete MFT: {}",
         humansize::format_size(mft_data.len(), humansize::DECIMAL)
     );
-    
+
     Ok(mft_data)
 }
 
@@ -489,7 +525,7 @@ fn write_mft_to_file(mft_data: &[u8], output_path: &Path) -> eyre::Result<()> {
 /// Enables backup and security privileges for the current process
 fn enable_backup_privileges() -> eyre::Result<()> {
     use std::mem::size_of;
-    
+
     unsafe {
         // Get current process token
         let mut token = windows::Win32::Foundation::HANDLE::default();
@@ -501,11 +537,7 @@ fn enable_backup_privileges() -> eyre::Result<()> {
         .with_context(|| "Failed to open process token")?;
 
         // Enable multiple privileges that might be needed
-        let privileges_to_enable = [
-            SE_BACKUP_NAME,
-            SE_RESTORE_NAME,
-            SE_SECURITY_NAME,
-        ];
+        let privileges_to_enable = [SE_BACKUP_NAME, SE_RESTORE_NAME, SE_SECURITY_NAME];
 
         for privilege_name in &privileges_to_enable {
             // Look up the privilege LUID

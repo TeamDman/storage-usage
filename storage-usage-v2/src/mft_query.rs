@@ -82,9 +82,7 @@ pub fn query_mft_files(
 
         // Print progress every 50,000 entries
         if total_entries % 50000 == 0 {
-            print!(
-                "Processed {total_entries} entries, found {matches_found} matches...\r"
-            );
+            print!("Processed {total_entries} entries, found {matches_found} matches...\r");
             std::io::Write::flush(&mut std::io::stdout()).unwrap_or(());
         }
 
@@ -95,53 +93,54 @@ pub fn query_mft_files(
         if let Ok(entry) = entry_result {
             for attribute_result in entry.iter_attributes() {
                 if let Ok(attribute) = attribute_result
-                    && let MftAttributeContent::AttrX30(filename_attr) = &attribute.data {
-                        let filename = &filename_attr.name;
+                    && let MftAttributeContent::AttrX30(filename_attr) = &attribute.data
+                {
+                    let filename = &filename_attr.name;
 
-                        // Skip system files, directories, and very short names
-                        if filename.starts_with('$')
-                            || filename.len() <= 2
-                            || filename == "."
-                            || filename == ".."
-                        {
-                            continue;
+                    // Skip system files, directories, and very short names
+                    if filename.starts_with('$')
+                        || filename.len() <= 2
+                        || filename == "."
+                        || filename == ".."
+                    {
+                        continue;
+                    }
+
+                    // Check if filename matches any of our patterns
+                    let filename_to_check = if ignore_case {
+                        filename.to_lowercase()
+                    } else {
+                        filename.clone()
+                    };
+
+                    // Check extension patterns (ends with .ext)
+                    let matches_extension = extension_patterns.iter().any(|ext| {
+                        if ext.is_empty() {
+                            false
+                        } else {
+                            filename_to_check.ends_with(&format!(".{ext}"))
+                        }
+                    });
+
+                    // Check literal patterns (exact filename match)
+                    let matches_literal = literal_patterns.contains(&filename_to_check);
+
+                    if matches_extension || matches_literal {
+                        matches_found += 1;
+
+                        if full_paths {
+                            // For now, just show the filename with a path prefix
+                            // Full reconstruction would require more robust MFT parsing
+                            println!("\\{filename}");
+                        } else {
+                            println!("{filename}");
                         }
 
-                        // Check if filename matches any of our patterns
-                        let filename_to_check = if ignore_case {
-                            filename.to_lowercase()
-                        } else {
-                            filename.clone()
-                        };
-
-                        // Check extension patterns (ends with .ext)
-                        let matches_extension = extension_patterns.iter().any(|ext| {
-                            if ext.is_empty() {
-                                false
-                            } else {
-                                filename_to_check.ends_with(&format!(".{ext}"))
-                            }
-                        });
-
-                        // Check literal patterns (exact filename match)
-                        let matches_literal = literal_patterns.contains(&filename_to_check);
-
-                        if matches_extension || matches_literal {
-                            matches_found += 1;
-
-                            if full_paths {
-                                // For now, just show the filename with a path prefix
-                                // Full reconstruction would require more robust MFT parsing
-                                println!("\\{filename}");
-                            } else {
-                                println!("{filename}");
-                            }
-
-                            if matches_found >= limit {
-                                break;
-                            }
+                        if matches_found >= limit {
+                            break;
                         }
                     }
+                }
             }
         }
     }
@@ -154,9 +153,7 @@ pub fn query_mft_files(
         println!("Searched {total_entries} entries total.");
     } else {
         println!();
-        println!(
-            "Found {matches_found} files matching the specified extensions (limit: {limit})."
-        );
+        println!("Found {matches_found} files matching the specified extensions (limit: {limit}).");
         println!("Searched {total_entries} entries total.");
 
         if matches_found == limit {

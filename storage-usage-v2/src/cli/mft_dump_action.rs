@@ -8,21 +8,21 @@ use std::path::PathBuf;
 /// Parse drive letters from input string, handling wildcards and multiple drives
 fn parse_drive_letters(input: &str) -> eyre::Result<Vec<char>> {
     let input = input.trim();
-    
+
     if input == "*" {
         // Get all available drives
         return get_available_drives();
     }
-    
+
     // Parse individual drive letters
     let mut drives = Vec::new();
-    
+
     // Handle various separators: space, comma, semicolon
     let parts: Vec<&str> = input
         .split(|c: char| c.is_whitespace() || c == ',' || c == ';')
         .filter(|s| !s.is_empty())
         .collect();
-    
+
     for part in parts {
         let part = part.trim();
         if part.len() == 1 {
@@ -44,31 +44,31 @@ fn parse_drive_letters(input: &str) -> eyre::Result<Vec<char>> {
             }
         }
     }
-    
+
     if drives.is_empty() {
         return Err(eyre::eyre!("No valid drive letters found in: '{}'", input));
     }
-    
+
     Ok(drives)
 }
 
 /// Get all available drives on the system
 fn get_available_drives() -> eyre::Result<Vec<char>> {
     use windows::Win32::Storage::FileSystem::GetLogicalDrives;
-    
+
     let drives_bitmask = unsafe { GetLogicalDrives() };
-    
+
     let mut available_drives = Vec::new();
     for i in 0..26 {
         if (drives_bitmask & (1 << i)) != 0 {
             available_drives.push((b'A' + i as u8) as char);
         }
     }
-    
+
     if available_drives.is_empty() {
         return Err(eyre::eyre!("No drives found on system"));
     }
-    
+
     Ok(available_drives)
 }
 
@@ -124,7 +124,7 @@ impl<'a> Arbitrary<'a> for MftDumpArgs {
 impl MftDumpArgs {
     pub fn run(self) -> eyre::Result<()> {
         let drives = parse_drive_letters(&self.drive_letters)?;
-        
+
         if drives.len() > 1 {
             // Multiple drives - validate output path contains %s
             let output_str = self.output_path.to_string_lossy();
@@ -134,7 +134,7 @@ impl MftDumpArgs {
                     drives.iter().collect::<String>()
                 ));
             }
-            
+
             // Process each drive
             for drive in drives {
                 let drive_output_path = output_str.replace("%s", &drive.to_string());
@@ -152,9 +152,12 @@ impl MftDumpArgs {
                 drives[0],
             )?;
         } else {
-            return Err(eyre::eyre!("No valid drives found for: {}", self.drive_letters));
+            return Err(eyre::eyre!(
+                "No valid drives found for: {}",
+                self.drive_letters
+            ));
         }
-        
+
         Ok(())
     }
 }

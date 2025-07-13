@@ -27,7 +27,6 @@ use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::StatefulWidget;
 use ratatui::widgets::Tabs;
 use ratatui::widgets::Widget;
-use tracing::info;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -36,6 +35,7 @@ use std::time::Duration;
 use std::time::Instant;
 use strum::Display;
 use strum::FromRepr;
+use tracing::info;
 
 #[derive(Debug, Clone)]
 enum ProgressMessage {
@@ -44,7 +44,7 @@ enum ProgressMessage {
         filename_found: Option<String>,
         attribute_type: Option<String>,
     },
-    EstimatedTotal(usize),
+    EstimatedTotalEntryCount(usize),
     Complete,
     Error(Line<'static>),
     ParseError(Line<'static>),
@@ -66,7 +66,7 @@ struct AnalysisProgress {
     completion_time: Option<Instant>,
     last_update: Instant,
     entries_per_second: f64,
-    estimated_total: Option<usize>,
+    estimated_total_entry_count: Option<usize>,
     eta_seconds: Option<f64>,
 
     // Error tracking
@@ -92,7 +92,7 @@ impl Default for AnalysisProgress {
             completion_time: None,
             last_update: now,
             entries_per_second: 0.0,
-            estimated_total: None,
+            estimated_total_entry_count: None,
             eta_seconds: None,
             errors: Vec::new(),
             critical_errors: 0,
@@ -135,8 +135,8 @@ impl AnalysisProgress {
                     self.recalculate_rate_and_eta();
                 }
             }
-            ProgressMessage::EstimatedTotal(total) => {
-                self.estimated_total = Some(total);
+            ProgressMessage::EstimatedTotalEntryCount(total) => {
+                self.estimated_total_entry_count = Some(total);
                 self.recalculate_rate_and_eta();
             }
             ProgressMessage::Complete => {
@@ -186,7 +186,7 @@ impl AnalysisProgress {
             self.entries_per_second = self.total_entries as f64 / elapsed;
 
             // Estimate ETA based on current rate
-            if let Some(estimated_total) = self.estimated_total {
+            if let Some(estimated_total) = self.estimated_total_entry_count {
                 let remaining = estimated_total.saturating_sub(self.total_entries);
                 if self.entries_per_second > 0.0 {
                     self.eta_seconds = Some(remaining as f64 / self.entries_per_second);
@@ -197,7 +197,7 @@ impl AnalysisProgress {
     }
 
     fn progress_percentage(&self) -> u16 {
-        if let Some(estimated_total) = self.estimated_total
+        if let Some(estimated_total) = self.estimated_total_entry_count
             && estimated_total > 0
         {
             return ((self.total_entries as f64 / estimated_total as f64) * 100.0).min(100.0)
@@ -477,8 +477,15 @@ impl MftSummaryApp {
         sender: mpsc::Sender<ProgressMessage>,
     ) -> eyre::Result<()> {
         info!("Reading MFT file: {}", mft_file.display());
-        let data = std::fs::read(&mft_file)
-            .map_err(|e| eyre::eyre!("Failed to read MFT file: {}", e))?;
+        // let data =
+        //     std::fs::read(&mft_file).map_err(|e| eyre::eyre!("Failed to read MFT file: {}", e))?;
+        let data = unsafe {
+            memmap2::MmapOptions::new()
+                .map(&std::fs::File::open(&mft_file)?)
+                .map_err(|e| eyre::eyre!("Failed to memory map MFT file: {}", e))
+        }?
+        .as_ref()
+        .to_vec();
 
         // let mut parser = MftParser::from_path(&mft_file)?;
         let mut parser = MftParser::from_buffer(data)?;
@@ -488,7 +495,7 @@ impl MftSummaryApp {
             let file_size = metadata.len();
             // Rough estimate: 1024 bytes per entry on average
             let estimated_entries = (file_size / 1024) as usize;
-            let _ = sender.send(ProgressMessage::EstimatedTotal(estimated_entries));
+            let _ = sender.send(ProgressMessage::EstimatedTotalEntryCount(estimated_entries));
         }
         for entry_result in parser.iter_entries() {
             let mut filename_found = None;
@@ -916,7 +923,8 @@ impl SelectedTab {
 
         for pixel_index in 0..total_pixels {
             let start_entry = pixel_index * entries_per_pixel;
-            let end_entry = ((pixel_index + 1) * entries_per_pixel).min(progress.entry_statuses.len());
+            let end_entry =
+                ((pixel_index + 1) * entries_per_pixel).min(progress.entry_statuses.len());
 
             let color = if start_entry >= progress.entry_statuses.len() {
                 Color::Black // empty
@@ -961,7 +969,7 @@ impl SelectedTab {
         content.push(Line::from(""));
 
         // Progress bar
-        if let Some(estimated_total) = progress.estimated_total {
+        if let Some(estimated_total) = progress.estimated_total_entry_count {
             let progress_ratio = if estimated_total > 0 {
                 progress.total_entries as f64 / estimated_total as f64
             } else {
@@ -1061,7 +1069,8 @@ impl SelectedTab {
         };
 
         if let Some(gauge_area) = gauge_area {
-            let progress_ratio = if let Some(estimated_total) = progress.estimated_total {
+            let progress_ratio = if let Some(estimated_total) = progress.estimated_total_entry_count
+            {
                 if estimated_total > 0 {
                     (progress.total_entries as f64 / estimated_total as f64).min(1.0)
                 } else {
@@ -1313,4 +1322,77 @@ pub fn show_mft_file(
     let application_result = MftSummaryApp::new(mft_file).run(terminal);
     ratatui::restore();
     application_result
+}
+
+/// Expand glob patterns and analyze multiple MFT files
+pub fn show_mft_files(
+    pattern: &str,
+    verbose: bool,
+    show_paths: bool,
+    max_entries: Option<usize>,
+    _threads: Option<usize>,
+) -> eyre::Result<()> {
+    // Expand glob pattern to find matching files
+    let mft_files = expand_glob_pattern(pattern)?;
+    info!(
+        "Found {} MFT files matching pattern '{}'",
+        mft_files.len(),
+        pattern
+    );
+    if mft_files.is_empty() {
+        return Err(eyre::eyre!("At least one MFT file is required to proceed"));
+    }
+
+    if mft_files.len() == 1 {
+        // Single file - use existing interactive UI
+        info!("Analyzing single MFT file: {}", mft_files[0].display());
+        return show_mft_file(mft_files[0].clone(), verbose, show_paths, max_entries);
+    }
+
+    // Multiple files - use new TUI with parallel analysis
+    info!(
+        "Analyzing {} MFT files with new TUI interface...",
+        mft_files.len()
+    );
+    let app = crate::tui::app::MftShowApp::new(mft_files);
+    app.run()
+}
+
+/// Expand glob pattern to find MFT files
+fn expand_glob_pattern(pattern: &str) -> eyre::Result<Vec<PathBuf>> {
+    use glob::glob;
+
+    let mut files = Vec::new();
+
+    // Handle different glob scenarios
+    if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
+        // Pattern contains wildcards - expand it
+        for entry in glob(pattern).map_err(|e| eyre::eyre!("Invalid glob pattern: {}", e))? {
+            match entry {
+                Ok(path) => {
+                    if path.is_file() {
+                        files.push(path);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Error accessing path in glob: {}", e);
+                }
+            }
+        }
+    } else {
+        // No wildcards - treat as single file path
+        let path = PathBuf::from(pattern);
+        if path.is_file() {
+            files.push(path);
+        } else if !path.exists() {
+            return Err(eyre::eyre!("File not found: {}", pattern));
+        } else {
+            return Err(eyre::eyre!("Path is not a file: {}", pattern));
+        }
+    }
+
+    // Sort files for consistent output
+    files.sort();
+
+    Ok(files)
 }
