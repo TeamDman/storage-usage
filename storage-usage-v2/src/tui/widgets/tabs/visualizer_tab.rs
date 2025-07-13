@@ -96,7 +96,7 @@ impl VisualizerTab {
     ) {
         if file.entry_health_statuses.is_empty() {
             Paragraph::new("No entry health data available yet")
-                .block(Block::default().borders(Borders::ALL))
+                .style(Style::default().fg(Color::Gray))
                 .render(area, buf);
             return;
         }
@@ -124,7 +124,6 @@ impl VisualizerTab {
         );
 
         Gauge::default()
-            .block(Block::default().borders(Borders::ALL).title("Entry Health"))
             .gauge_style(Style::default().fg(if health_ratio > 0.9 {
                 Color::Green
             } else if health_ratio > 0.7 {

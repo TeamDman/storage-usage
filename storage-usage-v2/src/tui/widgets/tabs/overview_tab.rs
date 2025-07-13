@@ -5,10 +5,9 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
 use ratatui::text::Span;
 use ratatui::text::Text;
-use ratatui::widgets::Block;
-use ratatui::widgets::Borders;
 use ratatui::widgets::List;
 use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
@@ -68,7 +67,7 @@ impl OverviewTab {
         );
 
         Paragraph::new(summary_text)
-            .block(Block::default().borders(Borders::ALL).title("Summary"))
+            .style(Style::default().fg(Color::White))
             .render(area, buf);
     }
 
@@ -112,7 +111,6 @@ impl OverviewTab {
             .collect();
 
         List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("MFT Files"))
             .render(area, buf);
     }
 

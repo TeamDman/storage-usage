@@ -9,8 +9,6 @@ use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Span, Line};
-use ratatui::widgets::Block;
-use ratatui::widgets::Borders;
 use ratatui::widgets::List;
 use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
@@ -140,12 +138,12 @@ impl SearchTab {
 
     pub fn render(&mut self, area: Rect, buf: &mut Buffer, mft_files: &[MftFileProgress]) {
         let layout = Layout::vertical([
-            Constraint::Length(3), // Search input
+            Constraint::Length(1), // Search input (no border, just text)
             Constraint::Min(0),    // Results
         ]);
         let [search_area, results_area] = layout.areas(area);
 
-        self.visible_height = results_area.height.saturating_sub(2) as usize; // Account for borders
+        self.visible_height = results_area.height as usize;
 
         self.render_search_input(search_area, buf);
         self.update_file_entries(mft_files);
@@ -159,7 +157,7 @@ impl SearchTab {
         );
 
         Paragraph::new(search_text)
-            .block(Block::default().borders(Borders::ALL).title("File Search"))
+            .style(Style::default().fg(Color::White))
             .render(area, buf);
     }
 
@@ -237,11 +235,7 @@ impl SearchTab {
             };
 
             Paragraph::new(message)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Results (0 files)"),
-                )
+                .style(Style::default().fg(Color::Gray))
                 .render(area, buf);
             return;
         }
@@ -290,16 +284,7 @@ impl SearchTab {
             })
             .collect();
 
-        let title = if self.search_query.is_empty() {
-            format!("All Files ({} total, {}/{})", 
-                snapshot.item_count(), self.selected_index + 1, matched_count)
-        } else {
-            format!("Search Results ({} matches, {}/{})", 
-                matched_count, self.selected_index + 1, matched_count)
-        };
-
         List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(title))
             .render(area, buf);
     }
 

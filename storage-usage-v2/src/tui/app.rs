@@ -1,5 +1,5 @@
 use crate::tui::progress::MftFileProgress;
-use crate::tui::widgets::tabs::AppTabs;
+use crate::tui::widgets::tabs::app_tabs::AppTabs;
 use crate::tui::widgets::tabs::keyboard_response::KeyboardResponse;
 use crate::tui::worker::start_workers;
 use ratatui::crossterm::event;
