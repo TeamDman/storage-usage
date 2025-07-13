@@ -1,5 +1,6 @@
 pub mod keyboard_response;
-pub mod overview_tab;pub mod search_tab;
+pub mod overview_tab;
+pub mod search_tab;
 pub mod visualizer_tab;
 
 use crate::tui::progress::MftFileProgress;
@@ -114,7 +115,11 @@ impl AppTabs {
                     .fg(Color::Yellow)
                     .add_modifier(ratatui::style::Modifier::BOLD),
             )
-.highlight_style(Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD))
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            )
             .select(self.selected);
         use ratatui::widgets::Widget;
         tabs_widget.render(tabs_area, buf);

@@ -3,7 +3,6 @@ pub mod console_reuse;
 pub mod init_tracing;
 pub mod mft_diff;
 pub mod mft_dump;
-pub mod mft_entry_iterator;
 pub mod mft_query;
 pub mod mft_show;
 pub mod to_args;
