@@ -1,7 +1,7 @@
 use crate::cli::mft_diff_action::MftDiffArgs;
 use crate::cli::mft_dump_action::MftDumpArgs;
 use crate::cli::mft_query_action::MftQueryArgs;
-use crate::cli::mft_summarize_action::MftSummarizeArgs;
+use crate::cli::mft_show_action::MftShowArgs;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
 use clap::Args;
@@ -35,7 +35,7 @@ pub enum MftAction {
     /// Compare two MFT files to find differences
     Diff(MftDiffArgs),
     /// Generate statistical summary of an MFT file
-    Summarize(MftSummarizeArgs),
+    Show(MftShowArgs),
     /// Search for specific files or patterns within an MFT
     Query(MftQueryArgs),
 }
@@ -45,7 +45,7 @@ impl MftAction {
         match self {
             MftAction::Dump(args) => args.run(),
             MftAction::Diff(args) => args.run(),
-            MftAction::Summarize(args) => args.run(),
+            MftAction::Show(args) => args.run(),
             MftAction::Query(args) => args.run(),
         }
     }
@@ -63,9 +63,9 @@ impl ToArgs for MftAction {
                 args.push("diff".into());
                 args.extend(diff_args.to_args());
             }
-            MftAction::Summarize(summarize_args) => {
-                args.push("summarize".into());
-                args.extend(summarize_args.to_args());
+            MftAction::Show(show_args) => {
+                args.push("show".into());
+                args.extend(show_args.to_args());
             }
             MftAction::Query(query_args) => {
                 args.push("query".into());

@@ -4,7 +4,7 @@ pub mod init_tracing;
 pub mod mft_diff;
 pub mod mft_dump;
 pub mod mft_query;
-pub mod mft_summarize;
+pub mod mft_show;
 pub mod to_args;
 pub mod win_elevation;
 pub mod win_handles;

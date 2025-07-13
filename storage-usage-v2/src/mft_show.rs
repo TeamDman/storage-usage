@@ -1303,7 +1303,7 @@ impl SelectedTab {
     }
 }
 
-pub fn summarize_mft_file(
+pub fn show_mft_file(
     mft_file: PathBuf,
     _verbose: bool,
     _show_paths: bool,

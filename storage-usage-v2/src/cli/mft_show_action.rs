@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 /// Arguments for generating MFT statistics and summary
 #[derive(Args, Clone, PartialEq, Debug, Arbitrary)]
-pub struct MftSummarizeArgs {
-    #[clap(help = "Path to the MFT file to summarize")]
+pub struct MftShowArgs {
+    #[clap(help = "Path to the MFT file to analyze")]
     pub mft_file: PathBuf,
 
     #[clap(long, help = "Show detailed statistics about MFT entries")]
@@ -23,9 +23,9 @@ pub struct MftSummarizeArgs {
     pub max_entries: Option<usize>,
 }
 
-impl MftSummarizeArgs {
+impl MftShowArgs {
     pub fn run(self) -> eyre::Result<()> {
-        crate::mft_summarize::summarize_mft_file(
+        crate::mft_show::show_mft_file(
             self.mft_file,
             self.verbose,
             self.show_paths,
@@ -34,7 +34,7 @@ impl MftSummarizeArgs {
     }
 }
 
-impl ToArgs for MftSummarizeArgs {
+impl ToArgs for MftShowArgs {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
         args.push(self.mft_file.as_os_str().into());

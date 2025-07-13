@@ -57,18 +57,18 @@ storage-usage-v2 mft query mft_dump.bin "*.log" --full-paths --limit 20
 - Configurable result limits
 - Option to show full paths or just filenames
 
-#### Summarize MFT
+#### Show MFT
 Get statistical overview of an MFT file:
 
 ```bash
 # Basic summary
-storage-usage-v2 mft summarize mft_dump.bin
+storage-usage-v2 mft show mft_dump.bin
 
 # Detailed statistics with sample paths
-storage-usage-v2 mft summarize mft_dump.bin --verbose --show-paths
+storage-usage-v2 mft show mft_dump.bin --verbose --show-paths
 
 # Process only first 10000 entries (for large files)
-storage-usage-v2 mft summarize mft_dump.bin --max-entries 10000
+storage-usage-v2 mft show mft_dump.bin --max-entries 10000
 ```
 
 **Features:**
@@ -147,7 +147,7 @@ Before performing MFT operations, the tool validates:
 storage-usage-v2 mft dump system_mft.bin --drive-letter C
 
 # 2. Get overview of the MFT
-storage-usage-v2 mft summarize system_mft.bin --verbose
+storage-usage-v2 mft show system_mft.bin --verbose
 
 # 3. Find all executable files
 storage-usage-v2 mft query system_mft.bin "*.exe" "*.dll" --full-paths --limit 100
@@ -165,7 +165,7 @@ storage-usage-v2 mft dump evidence_mft.bin --drive-letter E --overwrite-existing
 storage-usage-v2 mft query evidence_mft.bin "*.doc" "*.pdf" "*.jpg" --ignore-case --full-paths
 
 # Get comprehensive statistics
-storage-usage-v2 mft summarize evidence_mft.bin --verbose --show-paths
+storage-usage-v2 mft show evidence_mft.bin --verbose --show-paths
 ```
 
 ## Requirements
