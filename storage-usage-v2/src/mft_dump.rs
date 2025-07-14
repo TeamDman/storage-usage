@@ -75,7 +75,7 @@ pub fn dump_mft_to_file<P: AsRef<Path>>(
     // Validate that the drive is using NTFS filesystem
     info!("Validating filesystem type for drive {}...", drive_letter);
     validate_ntfs_filesystem(drive_letter)
-        .with_context(|| format!("NTFS validation failed for drive {}", drive_letter))?;
+        .with_context(|| format!("NTFS validation failed for drive {drive_letter}"))?;
 
     info!("Reading MFT data from drive {}...", drive_letter);
     let mft_data = read_mft_data(drive_letter)?;
@@ -244,7 +244,7 @@ fn read_mft_record(
     // Seek to the record
     unsafe {
         SetFilePointerEx(drive_handle, record_offset as i64, None, FILE_BEGIN)
-            .with_context(|| format!("Failed to seek to MFT record {}", record_number))?;
+            .with_context(|| format!("Failed to seek to MFT record {record_number}"))?;
     }
 
     // Read the record
@@ -257,7 +257,7 @@ fn read_mft_record(
             Some(&mut bytes_read),
             None,
         )
-        .with_context(|| format!("Failed to read MFT record {}", record_number))?;
+        .with_context(|| format!("Failed to read MFT record {record_number}"))?;
     }
 
     if bytes_read != MFT_RECORD_SIZE as u32 {
@@ -544,7 +544,7 @@ fn enable_backup_privileges() -> eyre::Result<()> {
             let mut luid = LUID::default();
             if LookupPrivilegeValueW(None, *privilege_name, &mut luid).is_ok() {
                 // Set up the privilege structure
-                let mut privileges = TOKEN_PRIVILEGES {
+                let privileges = TOKEN_PRIVILEGES {
                     PrivilegeCount: 1,
                     Privileges: [windows::Win32::Security::LUID_AND_ATTRIBUTES {
                         Luid: luid,
@@ -556,7 +556,7 @@ fn enable_backup_privileges() -> eyre::Result<()> {
                 let _ = AdjustTokenPrivileges(
                     token,
                     false,
-                    Some(&mut privileges),
+                    Some(&privileges),
                     size_of::<TOKEN_PRIVILEGES>() as u32,
                     None,
                     None,

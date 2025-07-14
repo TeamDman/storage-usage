@@ -26,6 +26,12 @@ pub struct AppTabs {
     pub tabs: Vec<AppTab>,
     pub selected: usize,
 }
+impl Default for AppTabs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppTabs {
     pub fn new() -> Self {
         Self {
@@ -70,7 +76,7 @@ impl AppTabs {
         Tabs::new(self.tabs.iter().map(|t| {
             let mut line = Line::default();
             line.push_span(Span::raw(" "));
-            line.push_span(Span::from(t.title().fg(Color::LightBlue).bg(Color::Black)));
+            line.push_span(t.title().fg(Color::LightBlue).bg(Color::Black));
             line.push_span(Span::raw(" "));
             line
         }))

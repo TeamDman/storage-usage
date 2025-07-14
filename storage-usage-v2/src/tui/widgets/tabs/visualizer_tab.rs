@@ -17,6 +17,12 @@ pub struct VisualizerTab {
     selected_file: usize,
 }
 
+impl Default for VisualizerTab {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VisualizerTab {
     pub fn new() -> Self {
         Self { selected_file: 0 }
@@ -148,7 +154,7 @@ impl VisualizerTab {
             return;
         }
 
-        let entries_per_cell = (health_statuses.len() + total_cells - 1) / total_cells;
+        let entries_per_cell = health_statuses.len().div_ceil(total_cells);
 
         for y in 0..grid_height {
             for x in 0..grid_width {

@@ -8,6 +8,7 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::Rect;
 use std::time::Instant;
 
+#[allow(clippy::large_enum_variant)]
 pub enum AppTab {
     Overview(OverviewTab),
     Visualizer(VisualizerTab),

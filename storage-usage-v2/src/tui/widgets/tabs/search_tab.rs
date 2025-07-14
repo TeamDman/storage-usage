@@ -36,6 +36,12 @@ pub struct SearchTab {
     visible_height: usize,
 }
 
+impl Default for SearchTab {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchTab {
     pub fn new() -> Self {
         let config = nucleo::Config::DEFAULT;

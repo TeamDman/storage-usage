@@ -147,7 +147,7 @@ impl AnalysisProgress {
             ProgressMessage::Error(error_msg) => {
                 self.errors.push(error_msg.clone());
                 // Count error types based on the message content
-                if let Some(first_span) = error_msg.spans.get(0) {
+                if let Some(first_span) = error_msg.spans.first() {
                     let content = first_span.content.as_ref();
                     if content.contains("[CRITICAL]") {
                         self.critical_errors += 1;
@@ -164,7 +164,7 @@ impl AnalysisProgress {
             ProgressMessage::ParseError(error_msg) => {
                 self.errors.push(error_msg.clone());
                 // Count error types based on the message content
-                if let Some(first_span) = error_msg.spans.get(0) {
+                if let Some(first_span) = error_msg.spans.first() {
                     let content = first_span.content.as_ref();
                     if content.contains("[CRITICAL]") {
                         self.critical_errors += 1;
@@ -531,7 +531,7 @@ impl MftSummaryApp {
                                 // Attribute parsing error - collect it but still count entry as valid
                                 let error_line = AnalysisProgress::create_styled_error(
                                     "attribute",
-                                    format!("{}", attr_error),
+                                    format!("{attr_error}"),
                                 );
                                 let _ = sender.send(ProgressMessage::ParseError(error_line));
                             }
@@ -542,7 +542,7 @@ impl MftSummaryApp {
                 Err(entry_error) => {
                     // Entry parsing error
                     let error_line =
-                        AnalysisProgress::create_styled_error("entry", format!("{}", entry_error));
+                        AnalysisProgress::create_styled_error("entry", format!("{entry_error}"));
                     let _ = sender.send(ProgressMessage::ParseError(error_line));
                     false
                 }
@@ -566,12 +566,12 @@ impl MftSummaryApp {
     }
 
     fn update_progress(&mut self) {
-        if !self.is_paused {
-            if let Some(receiver) = &self.progress_receiver {
-                // Process all available messages without blocking
-                while let Ok(message) = receiver.try_recv() {
-                    self.analysis_progress.update_with_message(message);
-                }
+        if !self.is_paused
+            && let Some(receiver) = &self.progress_receiver
+        {
+            // Process all available messages without blocking
+            while let Ok(message) = receiver.try_recv() {
+                self.analysis_progress.update_with_message(message);
             }
         }
     }
@@ -703,7 +703,7 @@ impl MftSummaryApp {
 
         // Add pause status if paused
         let footer_text = if self.is_paused {
-            format!("{} | [PAUSED]", base_footer)
+            format!("{base_footer} | [PAUSED]")
         } else {
             base_footer.to_string()
         };

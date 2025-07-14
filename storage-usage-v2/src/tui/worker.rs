@@ -121,7 +121,7 @@ pub fn process_mft_entry(
             });
             rtn.push(MainboundMessage::Error {
                 file_index: index,
-                error: Line::from(format!("Error processing entry: {}", e)),
+                error: Line::from(format!("Error processing entry: {e}")),
             });
             return rtn;
         }

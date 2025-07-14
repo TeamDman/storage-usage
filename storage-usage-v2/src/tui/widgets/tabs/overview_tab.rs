@@ -28,6 +28,12 @@ use uom::si::time::second;
 
 pub struct OverviewTab;
 
+impl Default for OverviewTab {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OverviewTab {
     pub fn new() -> Self {
         Self
@@ -39,7 +45,7 @@ impl OverviewTab {
         let chars: Vec<char> = num_str.chars().collect();
 
         for (i, ch) in chars.iter().enumerate() {
-            if i > 0 && (chars.len() - i) % 3 == 0 {
+            if i > 0 && (chars.len() - i).is_multiple_of(3) {
                 result.push(',');
             }
             result.push(*ch);
@@ -159,8 +165,7 @@ impl OverviewTab {
                         };
 
                         if elapsed_time > Time::ZERO {
-                            let entries_per_sec =
-                                processed_entries as f64 / elapsed_time.get::<second>() as f64;
+                            let entries_per_sec = processed_entries / elapsed_time.get::<second>();
                             let rate_text =
                                 format!(" (+{}/s)", Self::format_number(entries_per_sec as u64));
 
@@ -179,12 +184,10 @@ impl OverviewTab {
                             Cell::from(base_text)
                         }
                     }
+                } else if mft.processing_end.is_some() {
+                    Cell::from("?")
                 } else {
-                    if mft.processing_end.is_some() {
-                        Cell::from("?")
-                    } else {
-                        Cell::from("?/?")
-                    }
+                    Cell::from("?/?")
                 };
 
                 // Time elapsed column
