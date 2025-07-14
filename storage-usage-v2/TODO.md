@@ -1,0 +1,5 @@
+- [ ] Identify the full file paths
+- [ ] Use text area widget for search input
+- [ ] Improve search performance
+- [ ] Improve initial load performance
+- [ ] Add show direct from disk without requiring intermediate dump
