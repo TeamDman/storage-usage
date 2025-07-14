@@ -4,14 +4,14 @@ use clap::Args;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-/// Arguments for searching files within an MFT
+/// Arguments for fuzzy searching files within an MFT
 #[derive(Args, Clone, PartialEq, Debug, Arbitrary)]
 pub struct MftQueryArgs {
     #[clap(help = "Path to the MFT file to query")]
     pub mft_file: PathBuf,
 
-    #[clap(help = "File extensions (e.g., *.mp4, txt) or literal filenames to search for")]
-    pub extensions: Vec<String>,
+    #[clap(help = "Search query for fuzzy matching filenames")]
+    pub query: String,
 
     #[clap(
         long,
@@ -29,9 +29,9 @@ pub struct MftQueryArgs {
 
 impl MftQueryArgs {
     pub fn run(self) -> eyre::Result<()> {
-        crate::mft_query::query_mft_files(
+        crate::mft_query::query_mft_files_fuzzy(
             self.mft_file,
-            self.extensions,
+            self.query,
             self.limit,
             self.ignore_case,
             self.full_paths,
@@ -44,10 +44,8 @@ impl ToArgs for MftQueryArgs {
         let mut args = Vec::new();
         args.push(self.mft_file.as_os_str().into());
 
-        // Add extensions
-        for ext in &self.extensions {
-            args.push(ext.into());
-        }
+        // Add query
+        args.push(self.query.clone().into());
 
         if self.limit != 100 {
             args.push("--limit".into());

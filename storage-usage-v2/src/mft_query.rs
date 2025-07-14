@@ -1,93 +1,61 @@
 use mft::MftParser;
 use mft::attribute::MftAttributeContent;
+use nucleo::Nucleo;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-pub fn query_mft_files(
+#[derive(Clone)]
+struct FileEntry {
+    filename: String,
+    display_path: String,
+}
+
+pub fn query_mft_files_fuzzy(
     mft_file: PathBuf,
-    extensions: Vec<String>,
+    query: String,
     limit: usize,
     ignore_case: bool,
     full_paths: bool,
 ) -> eyre::Result<()> {
-    if extensions.is_empty() {
+    if query.trim().is_empty() {
         return Err(eyre::eyre!(
-            "No search patterns specified. Please provide file extensions (e.g., *.mp4, txt) or literal filenames"
+            "No search query specified. Please provide a search term for fuzzy matching."
         ));
     }
 
-    // Process search patterns: distinguish between extensions and literal filename patterns
-    let mut extension_patterns = Vec::new();
-    let mut literal_patterns = Vec::new();
-
-    for pattern in &extensions {
-        // If pattern contains no wildcards and has spaces or special chars, treat as literal filename
-        if !pattern.contains('*')
-            && (pattern.contains(' ')
-                || pattern.contains('(')
-                || pattern.contains(')')
-                || pattern.contains('-')
-                || pattern.len() > 10)
-        {
-            // Literal filename pattern
-            let literal = if ignore_case {
-                pattern.to_lowercase()
-            } else {
-                pattern.clone()
-            };
-            literal_patterns.push(literal);
-        } else {
-            // Extension pattern - remove * and . if present
-            let clean_ext = pattern.trim_start_matches('*').trim_start_matches('.');
-            let ext = if ignore_case {
-                clean_ext.to_lowercase()
-            } else {
-                clean_ext.to_string()
-            };
-            extension_patterns.push(ext);
-        }
-    }
-
-    println!("Searching for patterns: {}", extensions.join(", "));
-    if !extension_patterns.is_empty() {
-        println!(
-            "  Extensions: {}",
-            extension_patterns
-                .iter()
-                .map(|e| format!("*.{e}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-    }
-    if !literal_patterns.is_empty() {
-        println!("  Literal filenames: {}", literal_patterns.join(", "));
-    }
+    println!("Fuzzy searching for: '{}'", query);
     println!("Target file: {}", mft_file.display());
     if ignore_case {
         println!("Case-insensitive matching enabled");
     }
     println!();
 
-    // Open and parse the MFT file
+    // Set up nucleo matcher
+    let config = nucleo::Config::DEFAULT;
+    let mut matcher = Nucleo::new(
+        config,
+        Arc::new(|| {}), // notify callback
+        None,            // use default number of threads
+        1,               // single column for matching
+    );
+
+    // Open and parse the MFT file to collect all filenames
     let mut parser = MftParser::from_path(&mft_file)?;
-
-    let mut matches_found = 0;
     let mut total_entries = 0;
+    let mut files_collected = 0;
 
-    // Simple approach: if full_paths is requested, we'll show what we can reconstruct per entry
-    // without doing a full two-pass approach that seems to cause issues with this MFT file
+    println!("Collecting files from MFT...");
 
-    // Search for matching files
+    let injector = matcher.injector();
+
+    // First pass: collect all filenames
     for entry_result in parser.iter_entries() {
         total_entries += 1;
 
         // Print progress every 50,000 entries
         if total_entries % 50000 == 0 {
-            print!("Processed {total_entries} entries, found {matches_found} matches...\r");
+            print!("Processed {total_entries} entries, collected {files_collected} files...\r");
             std::io::Write::flush(&mut std::io::stdout()).unwrap_or(());
-        }
-
-        if matches_found >= limit {
-            break;
         }
 
         if let Ok(entry) = entry_result {
@@ -106,60 +74,124 @@ pub fn query_mft_files(
                         continue;
                     }
 
-                    // Check if filename matches any of our patterns
-                    let filename_to_check = if ignore_case {
-                        filename.to_lowercase()
+                    let display_path = if full_paths {
+                        format!("\\{filename}")
                     } else {
                         filename.clone()
                     };
 
-                    // Check extension patterns (ends with .ext)
-                    let matches_extension = extension_patterns.iter().any(|ext| {
-                        if ext.is_empty() {
-                            false
+                    let entry = FileEntry {
+                        filename: filename.clone(),
+                        display_path,
+                    };
+
+                    injector.push(entry, |entry, columns| {
+                        // Use filename for matching, potentially with case adjustment
+                        let search_text = if ignore_case {
+                            entry.filename.to_lowercase()
                         } else {
-                            filename_to_check.ends_with(&format!(".{ext}"))
-                        }
+                            entry.filename.clone()
+                        };
+                        columns[0] = search_text.into();
                     });
 
-                    // Check literal patterns (exact filename match)
-                    let matches_literal = literal_patterns.contains(&filename_to_check);
-
-                    if matches_extension || matches_literal {
-                        matches_found += 1;
-
-                        if full_paths {
-                            // For now, just show the filename with a path prefix
-                            // Full reconstruction would require more robust MFT parsing
-                            println!("\\{filename}");
-                        } else {
-                            println!("{filename}");
-                        }
-
-                        if matches_found >= limit {
-                            break;
-                        }
-                    }
+                    files_collected += 1;
                 }
             }
         }
     }
 
     // Clear the progress line
-    print!("{}\r", " ".repeat(60));
+    print!("{}\r", " ".repeat(70));
 
-    if matches_found == 0 {
-        println!("No files found matching the specified extensions.");
-        println!("Searched {total_entries} entries total.");
+    println!("Collected {files_collected} files from {total_entries} MFT entries");
+    println!("Performing fuzzy search...");
+
+    // Set up the search pattern
+    let search_query = if ignore_case {
+        query.to_lowercase()
     } else {
-        println!();
-        println!("Found {matches_found} files matching the specified extensions (limit: {limit}).");
-        println!("Searched {total_entries} entries total.");
+        query.clone()
+    };
 
-        if matches_found == limit {
-            println!("Note: Result limit reached. There may be more matching files.");
+    matcher.pattern.reparse(
+        0, // column 0
+        &search_query,
+        if ignore_case {
+            nucleo::pattern::CaseMatching::Ignore
+        } else {
+            nucleo::pattern::CaseMatching::Respect
+        },
+        nucleo::pattern::Normalization::Smart,
+        false, // assume new pattern
+    );
+
+    // Wait for matching to complete
+    let mut last_matched = 0;
+    loop {
+        matcher.tick(10); // 10ms timeout
+        let snapshot = matcher.snapshot();
+        let matched_count = snapshot.matched_item_count() as usize;
+
+        if matched_count != last_matched {
+            print!("Matching... found {} results\r", matched_count);
+            std::io::Write::flush(&mut std::io::stdout()).unwrap_or(());
+            last_matched = matched_count;
+        }
+
+        // Check if matching is complete (no change for a few iterations)
+        if matched_count > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let new_snapshot = matcher.snapshot();
+            if new_snapshot.matched_item_count() == matched_count as u32 {
+                break;
+            }
+        } else if files_collected == 0 {
+            break;
+        }
+
+        // Timeout after reasonable time
+        if matcher.snapshot().item_count() > 0 {
+            break;
         }
     }
+
+    // Clear the progress line
+    print!("{}\r", " ".repeat(50));
+
+    // Get and display results
+    let snapshot = matcher.snapshot();
+    let matched_count = snapshot.matched_item_count() as usize;
+
+    if matched_count == 0 {
+        println!("No files found matching the search query '{}'", query);
+        println!("Searched {} files total.", files_collected);
+        return Ok(());
+    }
+
+    println!("Found {} matching files:", matched_count);
+    println!();
+
+    let results_to_show = matched_count.min(limit);
+    let matched_items = snapshot.matched_items(0..results_to_show as u32);
+
+    for (i, item) in matched_items.enumerate() {
+        println!("{}", item.data.display_path);
+
+        if i + 1 >= limit {
+            break;
+        }
+    }
+
+    if matched_count > limit {
+        println!();
+        println!("... and {} more results (showing first {} due to limit)", 
+                matched_count - limit, limit);
+    }
+
+    println!();
+    println!("Found {} files matching '{}' (limit: {})", 
+            matched_count, query, limit);
 
     Ok(())
 }
