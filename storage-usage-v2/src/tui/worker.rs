@@ -9,8 +9,8 @@ use rayon::iter::ParallelIterator;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
+use uom::si::f64::Information;
 use uom::si::information::byte;
-use uom::si::u64::Information;
 
 pub fn start_workers(
     mft_files: Vec<PathBuf>,
@@ -41,7 +41,7 @@ pub fn process_mft_file(
         .len();
     tx.send(MainboundMessage::FileSizeDiscovered {
         file_index: index,
-        file_size: Information::new::<byte>(file_size_bytes),
+        file_size: Information::new::<byte>(file_size_bytes as f64),
     })?;
 
     // Memory map the file
@@ -68,10 +68,15 @@ pub fn process_mft_bytes(
 ) -> eyre::Result<()> {
     let mut parser = MftParser::from_buffer(mft_bytes)
         .map_err(|e| eyre::eyre!("Failed to parse MFT bytes: {}", e))?;
-    let size = parser.entry_size as u64;
+    let entry_size = Information::new::<byte>(parser.entry_size as f64);
+
+    tx.send(MainboundMessage::EntrySizeDiscovered {
+        file_index: index,
+        entry_size,
+    })?;
+
     for entry in parser.iter_entries() {
-        let size = Information::new::<byte>(size);
-        let messages = process_mft_entry(index, size, entry);
+        let messages = process_mft_entry(index, entry_size, entry);
         for message in messages {
             tx.send(message)
                 .map_err(|e| eyre::eyre!("Failed to send message: {}", e))?;

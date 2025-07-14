@@ -21,10 +21,14 @@ rayon = "1.10.0"
 strum = { version = "0.27.1", features = ["derive"] }
 throbber-widgets-tui = "0.7"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19" } #, features = ["env-filter"] }
-uom = { version = "0.37.0", default-features = false, features = ["u64", "si", "std"] }
+tracing-subscriber = { version = "0.3.19" }
+uom = { version = "0.37.0", default-features = false, features = [
+    "f64",
+    "si",
+    "std",
+] }
 widestring = "1.2.0"
-windows = {version="0.61.3",features=[
+windows = { version = "0.61.3", features = [
     "Win32_System_Registry",
     "Win32_Foundation",
     "Win32_Security",
@@ -38,7 +42,8 @@ windows = {version="0.61.3",features=[
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI",
     "Win32_System_Console",
-]}
+] }
+
 
 [patch.crates-io]
 mft = { path = "../../mft" }

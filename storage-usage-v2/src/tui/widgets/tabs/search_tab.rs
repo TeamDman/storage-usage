@@ -7,8 +7,10 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
-use ratatui::text::{Span, Line};
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::widgets::List;
 use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
@@ -40,8 +42,8 @@ impl SearchTab {
         let matcher = Nucleo::new(
             config,
             Arc::new(|| {}), // notify callback - we'll handle updates in render
-            None,  // use default number of threads
-            1,     // single column for matching
+            None,            // use default number of threads
+            1,               // single column for matching
         );
 
         Self {
@@ -86,7 +88,8 @@ impl SearchTab {
                 if matched_count > 0 && self.selected_index < matched_count - 1 {
                     self.selected_index += 1;
                     if self.selected_index >= self.scroll_offset + self.visible_height {
-                        self.scroll_offset = self.selected_index.saturating_sub(self.visible_height - 1);
+                        self.scroll_offset =
+                            self.selected_index.saturating_sub(self.visible_height - 1);
                     }
                 }
                 KeyboardResponse::Consume
@@ -100,9 +103,11 @@ impl SearchTab {
                 let snapshot = self.matcher.snapshot();
                 let matched_count = snapshot.matched_item_count() as usize;
                 if matched_count > 0 {
-                    self.selected_index = (self.selected_index + self.visible_height).min(matched_count - 1);
+                    self.selected_index =
+                        (self.selected_index + self.visible_height).min(matched_count - 1);
                     if self.selected_index >= self.scroll_offset + self.visible_height {
-                        self.scroll_offset = self.selected_index.saturating_sub(self.visible_height - 1);
+                        self.scroll_offset =
+                            self.selected_index.saturating_sub(self.visible_height - 1);
                     }
                 }
                 KeyboardResponse::Consume
@@ -163,38 +168,36 @@ impl SearchTab {
 
     fn update_file_entries(&mut self, mft_files: &[MftFileProgress]) {
         // Count total files to see if we need to update
-        let total_files: usize = mft_files.iter()
-            .map(|mft| mft.files_within.len())
-            .sum();
+        let total_files: usize = mft_files.iter().map(|mft| mft.files_within.len()).sum();
 
         // Only update if file count changed or it's been a while since last update
-        let should_update = total_files != self.last_file_count || 
-            self.last_update.elapsed().as_millis() > 500; // Update every 500ms max
+        let should_update =
+            total_files != self.last_file_count || self.last_update.elapsed().as_millis() > 500; // Update every 500ms max
 
         if should_update && total_files > self.last_file_count {
             let injector = self.matcher.injector();
-            
+
             // Add only new files since last update
             let mut files_added = 0;
             let mut current_count = 0;
-            
+
             'outer: for file_progress in mft_files {
                 for file_path in &file_progress.files_within {
                     current_count += 1;
-                    
+
                     // Skip files we've already added
                     if current_count <= self.last_file_count {
                         continue;
                     }
-                    
+
                     let display_name = file_path
                         .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("")
                         .to_string();
-                    
+
                     let full_path = file_path.to_string_lossy().to_string();
-                    
+
                     let entry = FileEntry {
                         path: file_path.clone(),
                         display_name: display_name.clone(),
@@ -205,9 +208,9 @@ impl SearchTab {
                         // Use filename for primary matching, but include full path for context
                         columns[0] = format!("{} {}", entry.display_name, entry.full_path).into();
                     });
-                    
+
                     files_added += 1;
-                    
+
                     // Batch limit to avoid blocking UI too long
                     if files_added >= 10000 {
                         break 'outer;
@@ -250,14 +253,14 @@ impl SearchTab {
         // Get visible range
         let start = self.scroll_offset;
         let end = (start + self.visible_height).min(matched_count);
-        
+
         let items: Vec<ListItem> = snapshot
             .matched_items(start as u32..end as u32)
             .enumerate()
             .map(|(idx, item)| {
                 let global_idx = start + idx;
                 let is_selected = global_idx == self.selected_index;
-                
+
                 let display_path = if let Some(parent) = item.data.path.parent() {
                     format!("{} ({})", item.data.display_name, parent.display())
                 } else {
@@ -284,20 +287,14 @@ impl SearchTab {
             })
             .collect();
 
-        List::new(items)
-            .render(area, buf);
+        List::new(items).render(area, buf);
     }
 
     /// Clear all files from the matcher (useful when starting a new MFT scan)
     pub fn clear_files(&mut self) {
         // Create a new matcher to clear all data
         let config = nucleo::Config::DEFAULT;
-        self.matcher = Nucleo::new(
-            config,
-            Arc::new(|| {}),
-            None,
-            1,
-        );
+        self.matcher = Nucleo::new(config, Arc::new(|| {}), None, 1);
         self.last_file_count = 0;
         self.scroll_offset = 0;
         self.selected_index = 0;
@@ -307,13 +304,17 @@ impl SearchTab {
     /// Get search statistics
     pub fn get_stats(&self) -> (usize, usize) {
         let snapshot = self.matcher.snapshot();
-        (snapshot.item_count() as usize, snapshot.matched_item_count() as usize)
+        (
+            snapshot.item_count() as usize,
+            snapshot.matched_item_count() as usize,
+        )
     }
 
     /// Get the currently selected file path, if any
     pub fn get_selected_file(&self) -> Option<PathBuf> {
         let snapshot = self.matcher.snapshot();
-        snapshot.get_matched_item(self.selected_index as u32)
+        snapshot
+            .get_matched_item(self.selected_index as u32)
             .map(|item| item.data.path.clone())
     }
 }

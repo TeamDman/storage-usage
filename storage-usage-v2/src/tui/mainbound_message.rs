@@ -2,13 +2,17 @@ use crate::tui::progress::MftFileProgress;
 use ratatui::text::Line;
 use std::path::PathBuf;
 use std::time::Instant;
-use uom::si::u64::Information;
+use uom::si::f64::Information;
 
 #[derive(Debug, Clone)]
 pub enum MainboundMessage {
     FileSizeDiscovered {
         file_index: usize,
         file_size: Information,
+    },
+    EntrySizeDiscovered {
+        file_index: usize,
+        entry_size: Information,
     },
     Progress {
         file_index: usize,
@@ -38,6 +42,12 @@ impl MainboundMessage {
                 file_size,
             } => {
                 mft_files[file_index].total_size = Some(file_size);
+            }
+            MainboundMessage::EntrySizeDiscovered {
+                file_index,
+                entry_size,
+            } => {
+                mft_files[file_index].entry_size = Some(entry_size);
             }
             MainboundMessage::Progress {
                 file_index,

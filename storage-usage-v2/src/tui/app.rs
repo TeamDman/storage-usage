@@ -6,11 +6,11 @@ use ratatui::crossterm::event;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
+use uom::ConstZero;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
-use uom::si::information::byte;
-use uom::si::u64::Information;
+use uom::si::f64::Information;
 
 pub struct MftShowApp {
     pub mft_files: Vec<MftFileProgress>,
@@ -25,7 +25,8 @@ impl MftShowApp {
             .map(|path| MftFileProgress {
                 path,
                 total_size: None,
-                processed_size: Information::new::<byte>(0),
+                entry_size: None,
+                processed_size: Information::ZERO,
                 processing_end: None,
                 files_within: Vec::new(),
                 errors: Vec::new(),
