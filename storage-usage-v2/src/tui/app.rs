@@ -6,10 +6,10 @@ use ratatui::crossterm::event;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
-use uom::ConstZero;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
+use uom::ConstZero;
 use uom::si::f64::Information;
 
 pub struct MftShowApp {

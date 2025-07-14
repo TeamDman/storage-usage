@@ -79,7 +79,10 @@ impl OverviewTab {
                     Time::new::<millisecond>(processing_begin.elapsed().as_millis() as f64);
                 let progress_cell = if mft.processing_end.is_some() {
                     // When processing is complete, just show the processed size
-                    Cell::from(humansize::format_size_i(mft.processed_size.get::<byte>(), DECIMAL))
+                    Cell::from(humansize::format_size_i(
+                        mft.processed_size.get::<byte>(),
+                        DECIMAL,
+                    ))
                 } else if elapsed_time > Time::ZERO {
                     let rate: InformationRate =
                         (mft.processed_size.get::<byte>() / elapsed_time).into();
@@ -98,14 +101,15 @@ impl OverviewTab {
                         }
                     );
 
-                    let mut spans = vec![
-                        Span::raw(base_text),
-                        Span::raw(rate_text).fg(Color::Cyan),
-                    ];
+                    let mut spans =
+                        vec![Span::raw(base_text), Span::raw(rate_text).fg(Color::Cyan)];
 
                     if let Some(total_size) = mft.total_size {
                         let remaining = total_size - mft.processed_size;
-                        let remaining_text = format!(" ({})", humansize::format_size_i(remaining.get::<byte>(), DECIMAL));
+                        let remaining_text = format!(
+                            " ({})",
+                            humansize::format_size_i(remaining.get::<byte>(), DECIMAL)
+                        );
                         spans.push(Span::raw(remaining_text).fg(Color::Yellow));
                     }
 
