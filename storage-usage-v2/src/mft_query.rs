@@ -1,6 +1,7 @@
 use mft::MftParser;
 use mft::attribute::MftAttributeContent;
 use nucleo::Nucleo;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -8,6 +9,14 @@ use std::sync::Arc;
 struct FileEntry {
     filename: String,
     display_path: String,
+    parent_reference: Option<u64>,
+    entry_id: u64,
+}
+
+#[derive(Clone)]
+struct DirectoryEntry {
+    name: String,
+    parent_reference: Option<u64>,
 }
 
 pub fn query_mft_files_fuzzy(
@@ -44,6 +53,9 @@ pub fn query_mft_files_fuzzy(
     let mut total_entries = 0;
     let mut files_collected = 0;
 
+    // Directory lookup table for path reconstruction
+    let mut directories: HashMap<u64, DirectoryEntry> = HashMap::new();
+
     println!("Collecting files from MFT...");
 
     let injector = matcher.injector();
@@ -65,7 +77,7 @@ pub fn query_mft_files_fuzzy(
                 {
                     let filename = &filename_attr.name;
 
-                    // Skip system files, directories, and very short names
+                    // Skip system files and very short names
                     if filename.starts_with('$')
                         || filename.len() <= 2
                         || filename == "."
@@ -74,23 +86,42 @@ pub fn query_mft_files_fuzzy(
                         continue;
                     }
 
+                    let parent_ref = if filename_attr.parent.entry == 0 {
+                        None
+                    } else {
+                        Some(filename_attr.parent.entry)
+                    };
+
+                    // For now, treat everything as a potential file and collect directory info separately
+                    // Store potential directory information for path reconstruction
+                    directories.insert(
+                        entry.header.record_number,
+                        DirectoryEntry {
+                            name: filename.clone(),
+                            parent_reference: parent_ref,
+                        },
+                    );
+
+                    // Add all files to the search index (not distinguishing directories for now)
                     let display_path = if full_paths {
-                        format!("\\{filename}")
+                        reconstruct_full_path(filename, parent_ref, &directories)
                     } else {
                         filename.clone()
                     };
 
-                    let entry = FileEntry {
+                    let entry_record = FileEntry {
                         filename: filename.clone(),
                         display_path,
+                        parent_reference: parent_ref,
+                        entry_id: entry.header.record_number,
                     };
 
-                    injector.push(entry, |entry, columns| {
+                    injector.push(entry_record, |entry_record, columns| {
                         // Use filename for matching, potentially with case adjustment
                         let search_text = if ignore_case {
-                            entry.filename.to_lowercase()
+                            entry_record.filename.to_lowercase()
                         } else {
-                            entry.filename.clone()
+                            entry_record.filename.clone()
                         };
                         columns[0] = search_text.into();
                     });
@@ -194,4 +225,31 @@ pub fn query_mft_files_fuzzy(
             matched_count, query, limit);
 
     Ok(())
+}
+
+fn reconstruct_full_path(
+    filename: &str,
+    parent_ref: Option<u64>,
+    directories: &HashMap<u64, DirectoryEntry>,
+) -> String {
+    let mut path_components = vec![filename.to_string()];
+    let mut current_parent = parent_ref;
+
+    // Walk up the directory tree
+    while let Some(parent_id) = current_parent {
+        if let Some(parent_dir) = directories.get(&parent_id) {
+            // Skip root directory references
+            if parent_dir.name == "." || parent_id == 5 {
+                break;
+            }
+            path_components.push(parent_dir.name.clone());
+            current_parent = parent_dir.parent_reference;
+        } else {
+            break;
+        }
+    }
+
+    // Reverse to get correct order (root to file) and join with backslashes
+    path_components.reverse();
+    format!("\\{}", path_components.join("\\"))
 }
