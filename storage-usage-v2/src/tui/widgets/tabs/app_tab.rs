@@ -1,20 +1,11 @@
-
 use crate::tui::progress::MftFileProgress;
 use crate::tui::widgets::tabs::keyboard_response::KeyboardResponse;
 use crate::tui::widgets::tabs::overview_tab::OverviewTab;
 use crate::tui::widgets::tabs::search_tab::SearchTab;
 use crate::tui::widgets::tabs::visualizer_tab::VisualizerTab;
 use ratatui::buffer::Buffer;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
-use ratatui::layout::Constraint;
-use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::widgets::Block;
-use ratatui::widgets::Tabs;
-use ratatui::widgets::Widget;
 use std::time::Instant;
 
 pub enum AppTab {

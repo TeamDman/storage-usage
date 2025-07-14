@@ -1,19 +1,24 @@
 use crate::tui::progress::MftFileProgress;
 use crate::tui::widgets::tabs::keyboard_response::KeyboardResponse;
+use humansize::DECIMAL;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::KeyEvent;
-use ratatui::layout::Constraint;
-use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::Color;
+use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::List;
-use ratatui::widgets::ListItem;
-use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
+use uom::si::u64::InformationRate;
+use std::time::Duration;
 use std::time::Instant;
 use uom::si::information::byte;
+use uom::si::information_rate::byte_per_second;
+use uom::si::time::millisecond;
+use uom::si::time::nanosecond;
+use uom::si::time::second;
+use uom::si::u64::Time;
 
 pub struct OverviewTab;
 
@@ -33,96 +38,80 @@ impl OverviewTab {
         mft_files: &[MftFileProgress],
         processing_begin: Instant,
     ) {
-        let layout = Layout::horizontal([
-            Constraint::Percentage(50), // Summary stats
-            Constraint::Percentage(50), // File list with progress
-        ]);
-        let [summary_area, files_area] = layout.areas(area);
+        let mut lines = Vec::new();
+        for mft in mft_files {
+            let mut text = Text::default();
 
-        self.render_summary(summary_area, buf, mft_files, processing_begin);
-        self.render_file_list(files_area, buf, mft_files);
-    }
+            if mft.processing_end.is_some() {
+                text.push_span(Span::raw("OK ").fg(Color::Green));
+            } else {
+                text.push_span(Span::raw("...").fg(Color::Yellow));
+            }
+            text.push_span(Span::raw(" "));
 
-    fn render_summary(
-        &self,
-        area: Rect,
-        buf: &mut Buffer,
-        mft_files: &[MftFileProgress],
-        processing_begin: Instant,
-    ) {
-        let completed_files = mft_files
-            .iter()
-            .filter(|f| f.processing_end.is_some())
-            .count();
-        let total_files = mft_files.len();
-        let total_errors: usize = mft_files.iter().map(|f| f.errors.len()).sum();
-        let elapsed = processing_begin.elapsed();
+            text.push_span({
+                match mft.path.file_name().and_then(|n| n.to_str()) {
+                    Some(name) => Span::raw(name),
+                    None => Span::raw(format!("Unknown file {:?}", mft.path.to_string_lossy())),
+                }
+            });
+            text.push_span(Span::raw(" "));
 
-        let summary_text = format!(
-            "Files: {}/{} | Errors: {} | Elapsed: {:.1}s",
-            completed_files,
-            total_files,
-            total_errors,
-            elapsed.as_secs_f64()
-        );
+            text.push_span(Span::from(humansize::format_size(
+                mft.processed_size.get::<byte>(),
+                DECIMAL,
+            )));
+            text.push_span(Span::raw("/"));
+            text.push_span(match mft.total_size {
+                Some(total_size) => {
+                    Span::from(humansize::format_size(total_size.get::<byte>(), DECIMAL))
+                }
+                None => Span::raw("? bytes"),
+            });
+            text.push_span(Span::raw(" "));
 
-        Paragraph::new(summary_text)
-            .style(Style::default().fg(Color::White))
-            .render(area, buf);
-    }
+            text.push_span(Span::raw(
+                humantime::format_duration(
+                    mft.processing_end
+                        .map(|end| end.duration_since(processing_begin))
+                        .unwrap_or_else(|| Instant::now().duration_since(processing_begin)),
+                )
+                .to_string(),
+            ));
+            text.push_span(Span::raw(" "));
 
-    fn render_file_list(&self, area: Rect, buf: &mut Buffer, mft_files: &[MftFileProgress]) {
-        let items: Vec<ListItem> = mft_files
-            .iter()
-            .map(|file| {
-                let filename = file
-                    .path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("Unknown");
-
-                let mut text = Text::default();
-
-                if file.processing_end.is_some() {
-                    text.push_span(Span::raw("OK "));
+            if mft.processing_end.is_none()
+                && let Some(total_size) = mft.total_size
+            {
+                let elapsed =
+                    Time::new::<millisecond>(processing_begin.elapsed().as_millis() as u64);
+                if elapsed.get::<nanosecond>() == 0 {
+                    text.push_span(Span::raw(" (Processing...)"));
                 } else {
-                    text.push_span(Span::raw("..."));
+                    let remaining = total_size - mft.processed_size;
+                    let rate: InformationRate = (mft.processed_size.get::<byte>() / elapsed).into();
+                    if rate.get::<byte_per_second>() == 0 {
+                        text.push_span(Span::raw(" (Calculating rate...)"));
+                    } else {
+                        let estimated_remaining_duration = remaining / rate;
+                        let estimated_remaining_duration = humantime::format_duration(
+                            Duration::from_secs(estimated_remaining_duration.get::<second>() as u64),
+                        );
+                        text.push_span(Span::raw(" (ETA: "));
+                        text.push_span(Span::raw(estimated_remaining_duration.to_string()));
+                        text.push_span(Span::raw(")"));
+                    }
                 }
+            }
 
-                text.push_span(Span::raw(" "));
+            if !mft.errors.is_empty() {
+                text.push_span(Span::raw(" (Errors: "));
+                text.push_span(Span::raw(mft.errors.len().to_string()));
+                text.push_span(Span::raw(")"));
+            }
 
-                text.push_span(Span::raw(filename));
-
-                if let Some(total) = file.total_size {
-                    let size_str = Self::format_size(total.get::<byte>());
-                    text.push_span(Span::raw(format!(" - {}", size_str)));
-                } else {
-                    text.push_span(Span::raw(" - ?"));
-                }
-
-                if !file.errors.is_empty() {
-                    text.push_span(Span::raw(" (Errors: "));
-                    text.push_span(Span::raw(file.errors.len().to_string()));
-                    text.push_span(Span::raw(")"));
-                }
-
-                ListItem::new(text)
-            })
-            .collect();
-
-        List::new(items)
-            .render(area, buf);
-    }
-
-    fn format_size(bytes: u64) -> String {
-        if bytes >= 1_000_000_000 {
-            format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
-        } else if bytes >= 1_000_000 {
-            format!("{:.1} MB", bytes as f64 / 1_000_000.0)
-        } else if bytes >= 1_000 {
-            format!("{:.1} KB", bytes as f64 / 1_000.0)
-        } else {
-            format!("{} B", bytes)
+            lines.push(text);
         }
+        List::new(lines).render(area, buf);
     }
 }

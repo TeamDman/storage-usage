@@ -4,7 +4,6 @@ use crate::tui::widgets::tabs::keyboard_response::KeyboardResponse;
 use crate::tui::widgets::tabs::overview_tab::OverviewTab;
 use crate::tui::widgets::tabs::search_tab::SearchTab;
 use crate::tui::widgets::tabs::visualizer_tab::VisualizerTab;
-use itertools::Itertools;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
