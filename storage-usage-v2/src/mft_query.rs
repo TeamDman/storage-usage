@@ -5,12 +5,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+// Import chrono types from mft crate's exports
+use chrono::{DateTime, Utc};
+
 #[derive(Clone)]
 struct FileEntry {
     filename: String,
     display_path: String,
     parent_reference: Option<u64>,
     entry_id: u64,
+    created: Option<DateTime<Utc>>,
+    modified: Option<DateTime<Utc>>,
+    accessed: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone)]
@@ -23,8 +29,6 @@ pub fn query_mft_files_fuzzy(
     mft_file: PathBuf,
     query: String,
     limit: usize,
-    ignore_case: bool,
-    full_paths: bool,
 ) -> eyre::Result<()> {
     if query.trim().is_empty() {
         return Err(eyre::eyre!(
@@ -34,9 +38,7 @@ pub fn query_mft_files_fuzzy(
 
     println!("Fuzzy searching for: '{}'", query);
     println!("Target file: {}", mft_file.display());
-    if ignore_case {
-        println!("Case-insensitive matching enabled");
-    }
+    println!("Using full paths for all results");
     println!();
 
     // Set up nucleo matcher
@@ -71,6 +73,23 @@ pub fn query_mft_files_fuzzy(
         }
 
         if let Ok(entry) = entry_result {
+            // Extract timestamp information from StandardInfo attribute first as a fallback
+            let mut std_created = None;
+            let mut std_modified = None;
+            let mut std_accessed = None;
+
+            // Look for StandardInfo attribute first
+            for attribute_result in entry.iter_attributes() {
+                if let Ok(attribute) = attribute_result
+                    && let MftAttributeContent::AttrX10(standard_info_attr) = &attribute.data
+                {
+                    std_created = Some(standard_info_attr.created);
+                    std_modified = Some(standard_info_attr.modified);
+                    std_accessed = Some(standard_info_attr.accessed);
+                    break;
+                }
+            }
+
             for attribute_result in entry.iter_attributes() {
                 if let Ok(attribute) = attribute_result
                     && let MftAttributeContent::AttrX30(filename_attr) = &attribute.data
@@ -102,28 +121,23 @@ pub fn query_mft_files_fuzzy(
                         },
                     );
 
-                    // Add all files to the search index (not distinguishing directories for now)
-                    let display_path = if full_paths {
-                        reconstruct_full_path(filename, parent_ref, &directories)
-                    } else {
-                        filename.clone()
-                    };
+                    // Always use full paths
+                    let display_path = reconstruct_full_path(filename, parent_ref, &directories);
 
+                    // Extract timestamp information - prefer FileNameAttr, fallback to StandardInfo
                     let entry_record = FileEntry {
                         filename: filename.clone(),
                         display_path,
                         parent_reference: parent_ref,
                         entry_id: entry.header.record_number,
+                        created: Some(filename_attr.created).or(std_created),
+                        modified: Some(filename_attr.modified).or(std_modified),
+                        accessed: Some(filename_attr.accessed).or(std_accessed),
                     };
 
+                    // Let nucleo handle the case matching with default behavior
                     injector.push(entry_record, |entry_record, columns| {
-                        // Use filename for matching, potentially with case adjustment
-                        let search_text = if ignore_case {
-                            entry_record.filename.to_lowercase()
-                        } else {
-                            entry_record.filename.clone()
-                        };
-                        columns[0] = search_text.into();
+                        columns[0] = entry_record.filename.clone().into();
                     });
 
                     files_collected += 1;
@@ -138,21 +152,11 @@ pub fn query_mft_files_fuzzy(
     println!("Collected {files_collected} files from {total_entries} MFT entries");
     println!("Performing fuzzy search...");
 
-    // Set up the search pattern
-    let search_query = if ignore_case {
-        query.to_lowercase()
-    } else {
-        query.clone()
-    };
-
+    // Set up the search pattern - let nucleo handle case matching
     matcher.pattern.reparse(
         0, // column 0
-        &search_query,
-        if ignore_case {
-            nucleo::pattern::CaseMatching::Ignore
-        } else {
-            nucleo::pattern::CaseMatching::Respect
-        },
+        &query,
+        nucleo::pattern::CaseMatching::Smart, // Smart case matching
         nucleo::pattern::Normalization::Smart,
         false, // assume new pattern
     );
@@ -207,7 +211,24 @@ pub fn query_mft_files_fuzzy(
     let matched_items = snapshot.matched_items(0..results_to_show as u32);
 
     for (i, item) in matched_items.enumerate() {
-        println!("{}", item.data.display_path);
+        let entry = &item.data;
+        
+        // Format timestamps for display
+        let created_str = entry.created
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "N/A".to_string());
+        let modified_str = entry.modified
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "N/A".to_string());
+        let accessed_str = entry.accessed
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "N/A".to_string());
+
+        println!("{}", entry.display_path);
+        println!("  Created:  {} UTC", created_str);
+        println!("  Modified: {} UTC", modified_str);
+        println!("  Accessed: {} UTC", accessed_str);
+        println!();
 
         if i + 1 >= limit {
             break;

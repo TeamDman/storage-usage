@@ -16,15 +16,9 @@ pub struct MftQueryArgs {
     #[clap(
         long,
         default_value = "100",
-        help = "Maximum number of results to return"
+        help = "Maximum number of results to display"
     )]
     pub limit: usize,
-
-    #[clap(long, help = "Case-insensitive matching")]
-    pub ignore_case: bool,
-
-    #[clap(long, help = "Show full paths instead of just filenames")]
-    pub full_paths: bool,
 }
 
 impl MftQueryArgs {
@@ -33,8 +27,6 @@ impl MftQueryArgs {
             self.mft_file,
             self.query,
             self.limit,
-            self.ignore_case,
-            self.full_paths,
         )
     }
 }
@@ -50,14 +42,6 @@ impl ToArgs for MftQueryArgs {
         if self.limit != 100 {
             args.push("--limit".into());
             args.push(self.limit.to_string().into());
-        }
-
-        if self.ignore_case {
-            args.push("--ignore-case".into());
-        }
-
-        if self.full_paths {
-            args.push("--full-paths".into());
         }
 
         args
