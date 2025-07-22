@@ -36,7 +36,7 @@ pub fn query_mft_files_fuzzy(
         ));
     }
 
-    println!("Fuzzy searching for: '{}'", query);
+    println!("Fuzzy searching for: '{query}'");
     println!("Target file: {}", mft_file.display());
     println!("Using full paths for all results");
     println!();
@@ -169,7 +169,7 @@ pub fn query_mft_files_fuzzy(
         let matched_count = snapshot.matched_item_count() as usize;
 
         if matched_count != last_matched {
-            print!("Matching... found {} results\r", matched_count);
+            print!("Matching... found {matched_count} results\r");
             std::io::Write::flush(&mut std::io::stdout()).unwrap_or(());
             last_matched = matched_count;
         }
@@ -199,12 +199,12 @@ pub fn query_mft_files_fuzzy(
     let matched_count = snapshot.matched_item_count() as usize;
 
     if matched_count == 0 {
-        println!("No files found matching the search query '{}'", query);
-        println!("Searched {} files total.", files_collected);
+        println!("No files found matching the search query '{query}'");
+        println!("Searched {files_collected} files total.");
         return Ok(());
     }
 
-    println!("Found {} matching files:", matched_count);
+    println!("Found {matched_count} matching files:");
     println!();
 
     let results_to_show = matched_count.min(limit);
@@ -225,9 +225,9 @@ pub fn query_mft_files_fuzzy(
             .unwrap_or_else(|| "N/A".to_string());
 
         println!("{}", entry.display_path);
-        println!("  Created:  {} UTC", created_str);
-        println!("  Modified: {} UTC", modified_str);
-        println!("  Accessed: {} UTC", accessed_str);
+        println!("  Created:  {created_str} UTC");
+        println!("  Modified: {modified_str} UTC");
+        println!("  Accessed: {accessed_str} UTC");
         println!();
 
         if i + 1 >= limit {
@@ -242,8 +242,7 @@ pub fn query_mft_files_fuzzy(
     }
 
     println!();
-    println!("Found {} files matching '{}' (limit: {})", 
-            matched_count, query, limit);
+    println!("Found {matched_count} files matching '{query}' (limit: {limit})");
 
     Ok(())
 }

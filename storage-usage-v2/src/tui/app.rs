@@ -95,8 +95,8 @@ impl MftShowApp {
             self.last_frame_time = now;
 
             // Check if any effects are running
-            let any_effect_running = self.startup_effect.as_ref().map_or(false, |e| e.running())
-                || (self.is_quitting && self.quit_effect.as_ref().map_or(false, |e| e.running()));
+            let any_effect_running = self.startup_effect.as_ref().is_some_and(|e| e.running())
+                || (self.is_quitting && self.quit_effect.as_ref().is_some_and(|e| e.running()));
 
             // Use shorter timeout when effects are running for smoother animation
             let poll_timeout = if any_effect_running {
@@ -129,20 +129,18 @@ impl MftShowApp {
                 }
 
                 // Apply quit effect if quitting
-                if self.is_quitting {
-                    if let Some(ref mut effect) = self.quit_effect {
+                if self.is_quitting
+                    && let Some(ref mut effect) = self.quit_effect {
                         frame.render_effect(effect, frame.area(), delta_time.into());
 
                         // If quit effect is done, break the loop
                         if !effect.running() {
-                            return;
                         }
                     }
-                }
             })?;
 
             // Break immediately if quit effect is done
-            if self.is_quitting && self.quit_effect.as_ref().map_or(true, |e| !e.running()) {
+            if self.is_quitting && self.quit_effect.as_ref().is_none_or(|e| !e.running()) {
                 break;
             }
 
@@ -172,11 +170,10 @@ impl MftShowApp {
                 }
 
                 // Pass key events to tabs only if not quitting
-                if !self.is_quitting {
-                    if let KeyboardResponse::Consume = self.tabs.on_key(key) {
+                if !self.is_quitting
+                    && let KeyboardResponse::Consume = self.tabs.on_key(key) {
                         // Key was handled by tabs
                     }
-                }
             }
         }
 
