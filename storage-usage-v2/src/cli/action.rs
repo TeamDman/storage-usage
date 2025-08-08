@@ -1,3 +1,4 @@
+use crate::cli::config_action::ConfigArgs;
 use crate::cli::elevation_action::ElevationArgs;
 use crate::cli::mft_action::MftArgs;
 use crate::to_args::ToArgs;
@@ -12,6 +13,8 @@ pub enum Action {
     Mft(MftArgs),
     /// Administrative privilege elevation utilities
     Elevation(ElevationArgs),
+    /// Application configuration
+    Config(ConfigArgs),
 }
 
 impl Action {
@@ -19,6 +22,7 @@ impl Action {
         match self {
             Action::Mft(args) => args.run(),
             Action::Elevation(args) => args.run(),
+            Action::Config(args) => args.run(),
         }
     }
 }
@@ -34,6 +38,10 @@ impl ToArgs for Action {
             Action::Elevation(elevation_args) => {
                 args.push("elevation".into());
                 args.extend(elevation_args.to_args());
+            }
+            Action::Config(config_args) => {
+                args.push("config".into());
+                args.extend(config_args.to_args());
             }
         }
         args

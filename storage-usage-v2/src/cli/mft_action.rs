@@ -2,6 +2,7 @@ use crate::cli::mft_diff_action::MftDiffArgs;
 use crate::cli::mft_dump_action::MftDumpArgs;
 use crate::cli::mft_query_action::MftQueryArgs;
 use crate::cli::mft_show_action::MftShowArgs;
+use crate::cli::mft_sync_action::MftSyncArgs;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
 use clap::Args;
@@ -38,6 +39,8 @@ pub enum MftAction {
     Show(MftShowArgs),
     /// Search for specific files or patterns within an MFT
     Query(MftQueryArgs),
+    /// Sync MFTs for drives matching a pattern into the cache dir
+    Sync(MftSyncArgs),
 }
 
 impl MftAction {
@@ -47,6 +50,7 @@ impl MftAction {
             MftAction::Diff(args) => args.run(),
             MftAction::Show(args) => args.run(),
             MftAction::Query(args) => args.run(),
+            MftAction::Sync(args) => args.run(),
         }
     }
 }
@@ -70,6 +74,10 @@ impl ToArgs for MftAction {
             MftAction::Query(query_args) => {
                 args.push("query".into());
                 args.extend(query_args.to_args());
+            }
+            MftAction::Sync(sync_args) => {
+                args.push("sync".into());
+                args.extend(sync_args.to_args());
             }
         }
         args

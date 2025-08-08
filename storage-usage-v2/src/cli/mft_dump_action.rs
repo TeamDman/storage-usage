@@ -4,79 +4,13 @@ use clap::Args;
 use eyre;
 use std::ffi::OsString;
 use std::path::PathBuf;
-
-/// Parse drive letters from input string, handling wildcards and multiple drives
-fn parse_drive_letters(input: &str) -> eyre::Result<Vec<char>> {
-    let input = input.trim();
-
-    if input == "*" {
-        // Get all available drives
-        return get_available_drives();
-    }
-
-    // Parse individual drive letters
-    let mut drives = Vec::new();
-
-    // Handle various separators: space, comma, semicolon
-    let parts: Vec<&str> = input
-        .split(|c: char| c.is_whitespace() || c == ',' || c == ';')
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    for part in parts {
-        let part = part.trim();
-        if part.len() == 1 {
-            if let Some(drive_char) = part.chars().next() {
-                if drive_char.is_ascii_alphabetic() {
-                    drives.push(drive_char.to_ascii_uppercase());
-                } else {
-                    return Err(eyre::eyre!("Invalid drive letter: '{}'", part));
-                }
-            }
-        } else if part.len() > 1 {
-            // Handle multiple characters as individual drive letters
-            for drive_char in part.chars() {
-                if drive_char.is_ascii_alphabetic() {
-                    drives.push(drive_char.to_ascii_uppercase());
-                } else {
-                    return Err(eyre::eyre!("Invalid drive letter: '{}'", drive_char));
-                }
-            }
-        }
-    }
-
-    if drives.is_empty() {
-        return Err(eyre::eyre!("No valid drive letters found in: '{}'", input));
-    }
-
-    Ok(drives)
-}
-
-/// Get all available drives on the system
-fn get_available_drives() -> eyre::Result<Vec<char>> {
-    use windows::Win32::Storage::FileSystem::GetLogicalDrives;
-
-    let drives_bitmask = unsafe { GetLogicalDrives() };
-
-    let mut available_drives = Vec::new();
-    for i in 0..26 {
-        if (drives_bitmask & (1 << i)) != 0 {
-            available_drives.push((b'A' + i as u8) as char);
-        }
-    }
-
-    if available_drives.is_empty() {
-        return Err(eyre::eyre!("No drives found on system"));
-    }
-
-    Ok(available_drives)
-}
+use super::drive_letter_pattern::DriveLetterPattern;
 
 /// Arguments for dumping MFT from an NTFS drive
 #[derive(Args, Clone, PartialEq, Debug)]
 pub struct MftDumpArgs {
     /// Drive letter(s) to dump MFT from. Use '*' for all available drives, or specify one or more drive letters (e.g., 'C', 'D E', 'C,D,E')
-    pub drive_letters: String,
+    pub drive_letters: DriveLetterPattern,
 
     /// Path where the MFT dump file will be saved. Use %s for drive letter substitution when multiple drives are specified
     pub output_path: PathBuf,
@@ -106,12 +40,8 @@ impl<'a> Arbitrary<'a> for MftDumpArgs {
         // Generate a random boolean for overwrite_existing
         let overwrite_existing = bool::arbitrary(u)?;
 
-        // Generate drive letters string (A-Z)
-        let drive_letters = {
-            let letter_index = u8::arbitrary(u)? % 26;
-            let letter = (b'A' + letter_index) as char;
-            letter.to_string()
-        };
+        // Generate drive letters pattern
+        let drive_letters = DriveLetterPattern::arbitrary(u)?;
 
         Ok(MftDumpArgs {
             drive_letters,
@@ -123,7 +53,7 @@ impl<'a> Arbitrary<'a> for MftDumpArgs {
 
 impl MftDumpArgs {
     pub fn run(self) -> eyre::Result<()> {
-        let drives = parse_drive_letters(&self.drive_letters)?;
+        let drives = self.drive_letters.resolve()?;
 
         if drives.len() > 1 {
             // Multiple drives - validate output path contains %s
@@ -165,7 +95,7 @@ impl MftDumpArgs {
 impl ToArgs for MftDumpArgs {
     fn to_args(&self) -> Vec<OsString> {
         let mut args = Vec::new();
-        args.push(self.drive_letters.clone().into());
+        args.push(self.drive_letters.to_string().into());
         args.push(self.output_path.as_os_str().into());
         if self.overwrite_existing {
             args.push("--overwrite-existing".into());

@@ -16,6 +16,9 @@ pub mod mft_diff_action;
 pub mod mft_dump_action;
 pub mod mft_query_action;
 pub mod mft_show_action;
+pub mod config_action;
+pub mod mft_sync_action;
+pub mod drive_letter_pattern;
 
 #[derive(Parser, Arbitrary, PartialEq, Debug)]
 #[clap(version)]
