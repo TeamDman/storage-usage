@@ -48,7 +48,7 @@ impl FromStr for DriveLetterPattern {
 impl<'a> Arbitrary<'a> for DriveLetterPattern {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         // 20% chance wildcard, 80% chance letters
-        if (u8::arbitrary(u)? % 5) == 0 {
+        if (u8::arbitrary(u)?).is_multiple_of(5) {
             return Ok(DriveLetterPattern("*".to_string()));
         }
         // Build between 1 and 4 letters

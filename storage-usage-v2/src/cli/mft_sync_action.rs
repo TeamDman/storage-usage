@@ -40,7 +40,7 @@ impl MftSyncArgs {
         let cache = get_cache_dir()?;
         fs::create_dir_all(&cache)?;
         for d in drives {
-            let out = cache.join(format!("{}.mft", d));
+            let out = cache.join(format!("{d}.mft"));
             crate::mft_dump::dump_mft_to_file(&out, self.overwrite_existing, d)?;
         }
         Ok(())
