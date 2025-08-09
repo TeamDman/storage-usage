@@ -12,8 +12,6 @@ use chrono::{DateTime, Utc};
 struct FileEntry {
     filename: String,
     display_path: String,
-    parent_reference: Option<u64>,
-    entry_id: u64,
     created: Option<DateTime<Utc>>,
     modified: Option<DateTime<Utc>>,
     accessed: Option<DateTime<Utc>>,
@@ -128,8 +126,6 @@ pub fn query_mft_files_fuzzy(
                     let entry_record = FileEntry {
                         filename: filename.clone(),
                         display_path,
-                        parent_reference: parent_ref,
-                        entry_id: entry.header.record_number,
                         created: Some(filename_attr.created).or(std_created),
                         modified: Some(filename_attr.modified).or(std_modified),
                         accessed: Some(filename_attr.accessed).or(std_accessed),

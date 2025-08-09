@@ -10,6 +10,7 @@ use super::drive_letter_pattern::DriveLetterPattern;
 #[derive(Args, Clone, PartialEq, Debug)]
 pub struct MftDumpArgs {
     /// Drive letter(s) to dump MFT from. Use '*' for all available drives, or specify one or more drive letters (e.g., 'C', 'D E', 'C,D,E')
+    #[clap(default_value_t = DriveLetterPattern::default())]
     pub drive_letters: DriveLetterPattern,
 
     /// Path where the MFT dump file will be saved. Use %s for drive letter substitution when multiple drives are specified

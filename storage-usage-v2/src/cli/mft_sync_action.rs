@@ -11,6 +11,7 @@ use super::drive_letter_pattern::DriveLetterPattern;
 #[derive(Args, Clone, PartialEq, Debug)]
 pub struct MftSyncArgs {
     /// Drive letter pattern to match drives to sync (e.g., "*", "C", "CD", "C,D")
+    #[clap(default_value_t = DriveLetterPattern::default())]
     pub drive_pattern: DriveLetterPattern,
 
     /// Overwrite existing cached MFT files
