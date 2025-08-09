@@ -1,5 +1,6 @@
 use crate::tui::progress::MftFileProgress;
 use crate::tui::widgets::tabs::app_tab::AppTab;
+use crate::tui::widgets::tabs::errors_tab::ErrorsTab;
 use crate::tui::widgets::tabs::keyboard_response::KeyboardResponse;
 use crate::tui::widgets::tabs::overview_tab::OverviewTab;
 use crate::tui::widgets::tabs::search_tab::SearchTab;
@@ -39,6 +40,7 @@ impl AppTabs {
                 AppTab::Overview(OverviewTab::new()),
                 AppTab::Visualizer(VisualizerTab::new()),
                 AppTab::Search(SearchTab::new()),
+                AppTab::Errors(ErrorsTab::new()),
             ],
             selected: 0,
         }

@@ -27,7 +27,7 @@ struct DirectoryEntry {
     parent_reference: Option<u64>,
 }
 
-pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, limit: usize, display_interval: Duration, top_n: usize) -> eyre::Result<()> {
+pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, limit: usize, display_interval: Duration, top_n: usize, timeout: Option<Duration>) -> eyre::Result<()> {
     if query.trim().is_empty() {
         return Err(eyre::eyre!(
             "No search query specified. Please provide a search term for fuzzy matching."
@@ -71,9 +71,11 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
     let worker_files = files_collected.clone();
     let worker_done = done.clone();
     let mft_files_cloned = mft_files.clone();
+    let drives_cloned = drives.clone();
     std::thread::spawn(move || {
-        mft_files_cloned.par_iter().for_each(|mft_file| {
+        mft_files_cloned.par_iter().enumerate().for_each(|(drive_index, mft_file)| {
             if let Ok(mut parser) = MftParser::from_path(mft_file) {
+                let drive_letter = drives_cloned[drive_index];
                 let mut directories: HashMap<u64, DirectoryEntry> = HashMap::new();
                 for entry_result in parser.iter_entries() {
                     worker_total.fetch_add(1, Ordering::Relaxed);
@@ -99,7 +101,7 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
                                 if filename.starts_with('$') || filename.len() <= 2 || filename == "." || filename == ".." { continue; }
                                 let parent_ref = if filename_attr.parent.entry == 0 { None } else { Some(filename_attr.parent.entry) };
                                 directories.insert(entry.header.record_number, DirectoryEntry { name: filename.clone(), parent_reference: parent_ref });
-                                let display_path = reconstruct_full_path(filename, parent_ref, &directories);
+                                let display_path = reconstruct_full_path(filename, parent_ref, &directories, drive_letter);
                                 let entry_record = FileEntry {
                                     filename: filename.clone(),
                                     display_path,
@@ -108,7 +110,8 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
                                     accessed: Some(filename_attr.accessed).or(std_accessed),
                                 };
                                 injector.push(entry_record, |entry_record, columns| {
-                                    columns[0] = entry_record.filename.clone().into();
+                                    // Use full path for matching to differentiate duplicates
+                                    columns[0] = entry_record.display_path.clone().into();
                                 });
                                 worker_files.fetch_add(1, Ordering::Relaxed);
                             }
@@ -134,6 +137,7 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
 
     // Periodic display until parsing complete
     loop {
+        if let Some(t) = timeout { if start.elapsed() >= t { break; } }
         matcher.tick(10); // small wait for matcher updates
         if last_display.elapsed() >= display_interval {
             let snapshot = matcher.snapshot();
@@ -162,6 +166,7 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
         if done.load(Ordering::Acquire) {
             // ensure a final display if interval not yet elapsed
             if last_display.elapsed() < display_interval {
+                if let Some(t) = timeout { if start.elapsed() >= t { break; } }
                 continue; // loop will hit display soon
             }
         }
@@ -197,6 +202,7 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
     }
     if matched_count > limit { println!("\n... and {} more results (showing first {} due to limit)", matched_count - limit, limit); }
     println!("\nFound {matched_count} files matching '{query}' (limit: {limit})");
+    if let Some(t) = timeout { if start.elapsed() >= t { println!("Timeout reached after {} ms", start.elapsed().as_millis()); } }
     Ok(())
 }
 
@@ -204,12 +210,14 @@ fn reconstruct_full_path(
     filename: &str,
     parent_ref: Option<u64>,
     directories: &HashMap<u64, DirectoryEntry>,
+    drive_letter: char,
 ) -> String {
     let mut path_components = vec![filename.to_string()];
     let mut current_parent = parent_ref;
-
+    let mut guard = 0usize;
     // Walk up the directory tree
     while let Some(parent_id) = current_parent {
+        if guard > 1024 { break; } // safety guard against cycles
         if let Some(parent_dir) = directories.get(&parent_id) {
             // Skip root directory references
             if parent_dir.name == "." || parent_id == 5 {
@@ -220,9 +228,10 @@ fn reconstruct_full_path(
         } else {
             break;
         }
+        guard += 1;
     }
 
     // Reverse to get correct order (root to file) and join with backslashes
     path_components.reverse();
-    format!("\\{}", path_components.join("\\"))
+    format!("{drive_letter}:\\{}", path_components.join("\\"))
 }

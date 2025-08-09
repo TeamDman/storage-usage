@@ -22,7 +22,6 @@ use std::time::Instant;
 #[derive(Clone)]
 struct FileEntry {
     path: PathBuf,
-    display_name: String,
     full_path: String,
 }
 
@@ -196,23 +195,16 @@ impl SearchTab {
                         continue;
                     }
 
-                    let display_name = file_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("")
-                        .to_string();
-
                     let full_path = file_path.to_string_lossy().to_string();
 
                     let entry = FileEntry {
                         path: file_path.clone(),
-                        display_name: display_name.clone(),
                         full_path: full_path.clone(),
                     };
 
                     injector.push(entry, |entry, columns| {
-                        // Use filename for primary matching, but include full path for context
-                        columns[0] = format!("{} {}", entry.display_name, entry.full_path).into();
+                        // Use full path as searchable text to differentiate duplicates
+                        columns[0] = entry.full_path.clone().into();
                     });
 
                     files_added += 1;
@@ -267,15 +259,10 @@ impl SearchTab {
                 let global_idx = start + idx;
                 let is_selected = global_idx == self.selected_index;
 
-                let display_path = if let Some(parent) = item.data.path.parent() {
-                    format!("{} ({})", item.data.display_name, parent.display())
-                } else {
-                    item.data.display_name.clone()
-                };
+                // Show full path
+                let display_path = item.data.full_path.clone();
 
                 if !self.search_query.is_empty() {
-                    // Highlight matches if we have a search query
-                    // For now, just use different styling for selected items
                     let style = if is_selected {
                         Style::default().fg(Color::Black).bg(Color::Yellow)
                     } else {

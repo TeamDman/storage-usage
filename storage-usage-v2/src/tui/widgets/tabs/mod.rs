@@ -4,3 +4,4 @@ pub mod keyboard_response;
 pub mod overview_tab;
 pub mod search_tab;
 pub mod visualizer_tab;
+pub mod errors_tab;

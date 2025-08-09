@@ -14,6 +14,7 @@ use ratatui::widgets::Cell;
 use ratatui::widgets::Row;
 use ratatui::widgets::Table;
 use ratatui::widgets::Widget;
+use std::cmp::min;
 use std::time::Duration;
 use std::time::Instant;
 use uom::ConstZero;
@@ -64,6 +65,7 @@ impl OverviewTab {
         mft_files: &[MftFileProgress],
         processing_begin: Instant,
     ) {
+        let max_path_width = area.width.saturating_sub(60) as usize; // heuristic to leave room for other columns
         let rows: Vec<Row> = mft_files
             .iter()
             .map(|mft| {
@@ -74,10 +76,17 @@ impl OverviewTab {
                     Text::from("...").fg(Color::Yellow)
                 };
 
-                // File name column
-                let file_name = match mft.path.file_name().and_then(|n| n.to_str()) {
-                    Some(name) => name.to_string(),
-                    None => format!("Unknown file {:?}", mft.path.to_string_lossy()),
+                // Full path column (with truncation in middle if too long)
+                let full_path = mft.path.to_string_lossy().to_string();
+                let file_display = if full_path.len() > max_path_width && max_path_width > 10 {
+                    let keep_each_side = (max_path_width - 3) / 2;
+                    format!(
+                        "{}...{}",
+                        &full_path[..keep_each_side],
+                        &full_path[full_path.len() - keep_each_side..]
+                    )
+                } else {
+                    full_path
                 };
 
                 // Progress column (with rate and remaining)
@@ -234,7 +243,7 @@ impl OverviewTab {
 
                 Row::new(vec![
                     Cell::from(status),
-                    Cell::from(file_name),
+                    Cell::from(file_display),
                     progress_cell,
                     entries_cell,
                     Cell::from(time_elapsed),
@@ -247,16 +256,16 @@ impl OverviewTab {
             rows,
             [
                 Constraint::Length(3), // Status
-                Constraint::Min(16),   // File name
-                Constraint::Fill(3),   // Progress (with rate)
-                Constraint::Fill(3),   // Entries (with rate)
+                Constraint::Min(30),   // Full path (was file name)
+                Constraint::Fill(3),   // Progress
+                Constraint::Fill(3),   // Entries
                 Constraint::Fill(1),   // Time
                 Constraint::Fill(1),   // ETA
             ],
         )
         .header(Row::new(vec![
             Cell::from(""),
-            Cell::from("File"),
+            Cell::from("Path"),
             Cell::from("Progress"),
             Cell::from("Entries"),
             Cell::from("Time"),

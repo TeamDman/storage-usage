@@ -40,6 +40,13 @@ pub struct MftQueryArgs {
         help = "Number of top matches to show each interval"
     )]
     pub top_n: usize,
+
+    #[clap(
+        long = "timeout",
+        value_parser = parse_duration,
+        help = "Maximum total run time before aborting (e.g. '5s', '2m'). If omitted, runs until completion"
+    )]
+    pub timeout: Option<Duration>,
 }
 
 impl MftQueryArgs {
@@ -50,6 +57,7 @@ impl MftQueryArgs {
             self.limit,
             self.display_interval,
             self.top_n,
+            self.timeout,
         )
     }
 }
@@ -71,6 +79,7 @@ impl ToArgs for MftQueryArgs {
             args.push("--top".into());
             args.push(self.top_n.to_string().into());
         }
+        if let Some(timeout) = self.timeout { args.push("--timeout".into()); args.push(humantime::format_duration(timeout).to_string().into()); }
         args
     }
 }

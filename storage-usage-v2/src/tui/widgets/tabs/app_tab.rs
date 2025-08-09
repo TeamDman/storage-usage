@@ -3,6 +3,7 @@ use crate::tui::widgets::tabs::keyboard_response::KeyboardResponse;
 use crate::tui::widgets::tabs::overview_tab::OverviewTab;
 use crate::tui::widgets::tabs::search_tab::SearchTab;
 use crate::tui::widgets::tabs::visualizer_tab::VisualizerTab;
+use crate::tui::widgets::tabs::errors_tab::ErrorsTab;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::Rect;
@@ -13,6 +14,7 @@ pub enum AppTab {
     Overview(OverviewTab),
     Visualizer(VisualizerTab),
     Search(SearchTab),
+    Errors(ErrorsTab),
 }
 
 impl AppTab {
@@ -21,6 +23,7 @@ impl AppTab {
             AppTab::Overview(_) => "Overview",
             AppTab::Visualizer(_) => "Visualizer",
             AppTab::Search(_) => "Search",
+            AppTab::Errors(_) => "Errors",
         }
     }
 
@@ -35,6 +38,7 @@ impl AppTab {
             AppTab::Overview(tab) => tab.render(area, buf, mft_files, processing_begin),
             AppTab::Visualizer(tab) => tab.render(area, buf, mft_files),
             AppTab::Search(tab) => tab.render(area, buf, mft_files),
+            AppTab::Errors(tab) => tab.render(area, buf, mft_files),
         }
     }
 
@@ -43,6 +47,7 @@ impl AppTab {
             AppTab::Overview(tab) => tab.on_key(event),
             AppTab::Visualizer(tab) => tab.on_key(event),
             AppTab::Search(tab) => tab.on_key(event),
+            AppTab::Errors(tab) => tab.on_key(event),
         }
     }
 }
