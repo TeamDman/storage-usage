@@ -130,13 +130,13 @@ impl MftShowApp {
 
                 // Apply quit effect if quitting
                 if self.is_quitting
-                    && let Some(ref mut effect) = self.quit_effect {
-                        frame.render_effect(effect, frame.area(), delta_time.into());
+                    && let Some(ref mut effect) = self.quit_effect
+                {
+                    frame.render_effect(effect, frame.area(), delta_time.into());
 
-                        // If quit effect is done, break the loop
-                        if !effect.running() {
-                        }
-                    }
+                    // If quit effect is done, break the loop
+                    if !effect.running() {}
+                }
             })?;
 
             // Break immediately if quit effect is done
@@ -171,9 +171,10 @@ impl MftShowApp {
 
                 // Pass key events to tabs only if not quitting
                 if !self.is_quitting
-                    && let KeyboardResponse::Consume = self.tabs.on_key(key) {
-                        // Key was handled by tabs
-                    }
+                    && let KeyboardResponse::Consume = self.tabs.on_key(key)
+                {
+                    // Key was handled by tabs
+                }
             }
         }
 

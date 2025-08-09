@@ -18,7 +18,9 @@ impl Default for DriveLetterPattern {
 }
 
 impl DriveLetterPattern {
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 
     /// Resolve the pattern into a list of drive letters.
     pub fn resolve(&self) -> eyre::Result<Vec<char>> {

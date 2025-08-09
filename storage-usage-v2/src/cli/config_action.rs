@@ -1,7 +1,10 @@
-use crate::config::{get_cache_dir, set_cache_dir};
+use crate::config::get_cache_dir;
+use crate::config::set_cache_dir;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
-use clap::{Args, Subcommand, ValueEnum};
+use clap::Args;
+use clap::Subcommand;
+use clap::ValueEnum;
 use color_eyre::eyre;
 use std::ffi::OsString;
 use std::path::PathBuf;

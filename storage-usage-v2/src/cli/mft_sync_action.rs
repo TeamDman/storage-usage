@@ -1,3 +1,4 @@
+use super::drive_letter_pattern::DriveLetterPattern;
 use crate::config::get_cache_dir;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
@@ -5,7 +6,6 @@ use clap::Args;
 use color_eyre::eyre;
 use std::ffi::OsString;
 use std::fs;
-use super::drive_letter_pattern::DriveLetterPattern;
 
 /// Arguments for syncing MFT files into the cache directory
 #[derive(Args, Clone, PartialEq, Debug)]
@@ -27,7 +27,10 @@ impl<'a> Arbitrary<'a> for MftSyncArgs {
             DriveLetterPattern(c.to_string())
         };
         let overwrite_existing = bool::arbitrary(u)?;
-        Ok(Self { drive_pattern: drive_letter, overwrite_existing })
+        Ok(Self {
+            drive_pattern: drive_letter,
+            overwrite_existing,
+        })
     }
 }
 

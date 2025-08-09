@@ -1,10 +1,10 @@
+use super::drive_letter_pattern::DriveLetterPattern;
 use crate::to_args::ToArgs;
 use arbitrary::Arbitrary;
 use clap::Args;
 use eyre;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use super::drive_letter_pattern::DriveLetterPattern;
 
 /// Arguments for dumping MFT from an NTFS drive
 #[derive(Args, Clone, PartialEq, Debug)]

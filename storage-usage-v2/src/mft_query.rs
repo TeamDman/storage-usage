@@ -1,12 +1,11 @@
+// Import chrono types from mft crate's exports
+use chrono::{DateTime, Utc};
 use mft::MftParser;
 use mft::attribute::MftAttributeContent;
 use nucleo::Nucleo;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-// Import chrono types from mft crate's exports
-use chrono::{DateTime, Utc};
 
 #[derive(Clone)]
 struct FileEntry {
@@ -23,11 +22,7 @@ struct DirectoryEntry {
     parent_reference: Option<u64>,
 }
 
-pub fn query_mft_files_fuzzy(
-    mft_file: PathBuf,
-    query: String,
-    limit: usize,
-) -> eyre::Result<()> {
+pub fn query_mft_files_fuzzy(mft_file: PathBuf, query: String, limit: usize) -> eyre::Result<()> {
     if query.trim().is_empty() {
         return Err(eyre::eyre!(
             "No search query specified. Please provide a search term for fuzzy matching."
@@ -208,15 +203,18 @@ pub fn query_mft_files_fuzzy(
 
     for (i, item) in matched_items.enumerate() {
         let entry = &item.data;
-        
+
         // Format timestamps for display
-        let created_str = entry.created
+        let created_str = entry
+            .created
             .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "N/A".to_string());
-        let modified_str = entry.modified
+        let modified_str = entry
+            .modified
             .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "N/A".to_string());
-        let accessed_str = entry.accessed
+        let accessed_str = entry
+            .accessed
             .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "N/A".to_string());
 
@@ -233,8 +231,11 @@ pub fn query_mft_files_fuzzy(
 
     if matched_count > limit {
         println!();
-        println!("... and {} more results (showing first {} due to limit)", 
-                matched_count - limit, limit);
+        println!(
+            "... and {} more results (showing first {} due to limit)",
+            matched_count - limit,
+            limit
+        );
     }
 
     println!();

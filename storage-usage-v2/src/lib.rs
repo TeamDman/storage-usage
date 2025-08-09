@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod config;
 pub mod console_reuse;
 pub mod init_tracing;
 pub mod mft_diff;
@@ -10,4 +11,3 @@ pub mod tui;
 pub mod win_elevation;
 pub mod win_handles;
 pub mod win_strings;
-pub mod config;

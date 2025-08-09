@@ -23,11 +23,7 @@ pub struct MftQueryArgs {
 
 impl MftQueryArgs {
     pub fn run(self) -> eyre::Result<()> {
-        crate::mft_query::query_mft_files_fuzzy(
-            self.mft_file,
-            self.query,
-            self.limit,
-        )
+        crate::mft_query::query_mft_files_fuzzy(self.mft_file, self.query, self.limit)
     }
 }
 

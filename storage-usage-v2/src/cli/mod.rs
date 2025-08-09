@@ -7,6 +7,8 @@ use clap::Parser;
 use std::ffi::OsString;
 
 pub mod action;
+pub mod config_action;
+pub mod drive_letter_pattern;
 pub mod elevation_action;
 pub mod elevation_check_action;
 pub mod elevation_test_action;
@@ -16,9 +18,7 @@ pub mod mft_diff_action;
 pub mod mft_dump_action;
 pub mod mft_query_action;
 pub mod mft_show_action;
-pub mod config_action;
 pub mod mft_sync_action;
-pub mod drive_letter_pattern;
 
 #[derive(Parser, Arbitrary, PartialEq, Debug)]
 #[clap(version)]

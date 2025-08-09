@@ -1,9 +1,11 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, RwLock};
-
-use color_eyre::eyre::{self, Context};
+use color_eyre::eyre::Context;
+use color_eyre::eyre::{self};
 use directories_next::ProjectDirs;
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::LazyLock;
+use std::sync::RwLock;
 
 static CACHE_DIR_CACHE: LazyLock<RwLock<Option<PathBuf>>> = LazyLock::new(|| {
     let initial = read_initial_cache_dir().ok().flatten();
@@ -27,8 +29,8 @@ fn read_env_cache_dir() -> eyre::Result<Option<PathBuf>> {
             if p.as_os_str().is_empty() {
                 return Ok(None);
             }
-            let canon = fs::canonicalize(p)
-                .with_context(|| format!("canonicalizing {}", p.display()))?;
+            let canon =
+                fs::canonicalize(p).with_context(|| format!("canonicalizing {}", p.display()))?;
             Ok(Some(canon))
         }
         Err(std::env::VarError::NotPresent) => Ok(None),
@@ -41,20 +43,21 @@ fn read_cache_dir_file() -> eyre::Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
     }
-    let contents = fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let contents =
+        fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let trimmed = contents.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
     let p = Path::new(trimmed);
-    let canon = fs::canonicalize(p)
-        .with_context(|| format!("canonicalizing {}", p.display()))?;
+    let canon = fs::canonicalize(p).with_context(|| format!("canonicalizing {}", p.display()))?;
     Ok(Some(canon))
 }
 
 fn read_initial_cache_dir() -> eyre::Result<Option<PathBuf>> {
-    if let Some(p) = read_env_cache_dir()? { return Ok(Some(p)); }
+    if let Some(p) = read_env_cache_dir()? {
+        return Ok(Some(p));
+    }
     read_cache_dir_file()
 }
 
@@ -68,7 +71,9 @@ pub fn get_cache_dir() -> eyre::Result<PathBuf> {
             *CACHE_DIR_CACHE.write().unwrap() = Some(p.clone());
             Ok(p)
         }
-        None => Err(eyre::eyre!("cache-dir is not configured. Use: storage-usage-v2.exe config set cache-dir .")),
+        None => Err(eyre::eyre!(
+            "cache-dir is not configured. Use: storage-usage-v2.exe config set cache-dir ."
+        )),
     }
 }
 
