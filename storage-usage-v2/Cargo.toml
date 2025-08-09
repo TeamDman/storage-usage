@@ -21,8 +21,8 @@ nucleo = "0.5.0"
 ratatui = "0.29.0"
 rayon = "1.10.0"
 strum = { version = "0.27.1", features = ["derive"] }
-tachyonfx = "0.15.0"
-throbber-widgets-tui = "0.7"
+tachyonfx = "0.16.0"
+throbber-widgets-tui = "0.8"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19" }
 uom = { version = "0.37.0", default-features = false, features = [
