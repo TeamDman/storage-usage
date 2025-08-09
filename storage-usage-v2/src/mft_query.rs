@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicU64, AtomicBool, Ordering}; // new
 #[derive(Clone)]
 struct FileEntry {
     filename: String,
+    parent_ref: Option<u64>,
     display_path: String,
     created: Option<DateTime<Utc>>,
     modified: Option<DateTime<Utc>>,
@@ -73,23 +74,41 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
     let mft_files_cloned = mft_files.clone();
     let drives_cloned = drives.clone();
     std::thread::spawn(move || {
+        // Structure holding a not-yet-resolved entry
+        #[derive(Clone)]
+        struct PendingEntry {
+            record_number: u64,
+            filename: String,
+            parent_ref: Option<u64>,
+            created: Option<DateTime<Utc>>,
+            modified: Option<DateTime<Utc>>,
+            accessed: Option<DateTime<Utc>>,
+        }
+
         mft_files_cloned.par_iter().enumerate().for_each(|(drive_index, mft_file)| {
             if let Ok(mut parser) = MftParser::from_path(mft_file) {
                 let drive_letter = drives_cloned[drive_index];
                 let mut directories: HashMap<u64, DirectoryEntry> = HashMap::new();
+                // parent_id -> list of children waiting for that ancestor to appear
+                let mut pending: HashMap<u64, Vec<PendingEntry>> = HashMap::new();
+
+                // Attempt to resolve a vector of pending entries (called when a new directory becomes available)
+                let mut resolve_queue = Vec::new();
+
                 for entry_result in parser.iter_entries() {
                     worker_total.fetch_add(1, Ordering::Relaxed);
                     if let Ok(entry) = entry_result {
+                        let record_number = entry.header.record_number;
                         let mut std_created = None;
                         let mut std_modified = None;
                         let mut std_accessed = None;
                         for attribute_result in entry.iter_attributes() {
                             if let Ok(attribute) = attribute_result
-                                && let MftAttributeContent::AttrX10(standard_info_attr) = &attribute.data
+                                && let MftAttributeContent::AttrX10(info) = &attribute.data
                             {
-                                std_created = Some(standard_info_attr.created);
-                                std_modified = Some(standard_info_attr.modified);
-                                std_accessed = Some(standard_info_attr.accessed);
+                                std_created = Some(info.created);
+                                std_modified = Some(info.modified);
+                                std_accessed = Some(info.accessed);
                                 break;
                             }
                         }
@@ -98,24 +117,88 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
                                 && let MftAttributeContent::AttrX30(filename_attr) = &attribute.data
                             {
                                 let filename = &filename_attr.name;
-                                if filename.starts_with('$') || filename.len() <= 2 || filename == "." || filename == ".." { continue; }
+                                if filename.starts_with('$') || filename == "." || filename == ".." { continue; }
                                 let parent_ref = if filename_attr.parent.entry == 0 { None } else { Some(filename_attr.parent.entry) };
-                                directories.insert(entry.header.record_number, DirectoryEntry { name: filename.clone(), parent_reference: parent_ref });
-                                let display_path = reconstruct_full_path(filename, parent_ref, &directories, drive_letter);
-                                let entry_record = FileEntry {
-                                    filename: filename.clone(),
-                                    display_path,
-                                    created: Some(filename_attr.created).or(std_created),
-                                    modified: Some(filename_attr.modified).or(std_modified),
-                                    accessed: Some(filename_attr.accessed).or(std_accessed),
-                                };
-                                injector.push(entry_record, |entry_record, columns| {
-                                    // Use full path for matching to differentiate duplicates
-                                    columns[0] = entry_record.display_path.clone().into();
-                                });
-                                worker_files.fetch_add(1, Ordering::Relaxed);
+
+                                // Insert directory entry for this record (even if it's a file; harmless, enables parent traversal)
+                                directories.insert(record_number, DirectoryEntry { name: filename.clone(), parent_reference: parent_ref });
+
+                                // Try to build full path now
+                                match try_build_full_path(filename, parent_ref, &directories, drive_letter) {
+                                    Ok(full_path) => {
+                                        let entry_record = FileEntry {
+                                            filename: filename.clone(),
+                                            parent_ref,
+                                            display_path: full_path,
+                                            created: Some(filename_attr.created).or(std_created),
+                                            modified: Some(filename_attr.modified).or(std_modified),
+                                            accessed: Some(filename_attr.accessed).or(std_accessed),
+                                        };
+                                        injector.push(entry_record, |e, cols| { cols[0] = e.display_path.clone().into(); });
+                                        worker_files.fetch_add(1, Ordering::Relaxed);
+
+                                        // Newly inserted directory might unblock children waiting on this record_number
+                                        if let Some(children) = pending.remove(&record_number) {
+                                            resolve_queue.extend(children);
+                                        }
+                                    }
+                                    Err(missing_parent) => {
+                                        // Queue for later when that parent id appears
+                                        let p = PendingEntry {
+                                            record_number,
+                                            filename: filename.clone(),
+                                            parent_ref,
+                                            created: Some(filename_attr.created).or(std_created),
+                                            modified: Some(filename_attr.modified).or(std_modified),
+                                            accessed: Some(filename_attr.accessed).or(std_accessed),
+                                        };
+                                        pending.entry(missing_parent).or_default().push(p);
+                                    }
+                                }
+
+                                // Resolve queue breadth-first
+                                while let Some(pend) = resolve_queue.pop() {
+                                    match try_build_full_path(&pend.filename, pend.parent_ref, &directories, drive_letter) {
+                                        Ok(path) => {
+                                            let entry_record = FileEntry {
+                                                filename: pend.filename.clone(),
+                                                parent_ref: pend.parent_ref,
+                                                display_path: path,
+                                                created: pend.created,
+                                                modified: pend.modified,
+                                                accessed: pend.accessed,
+                                            };
+                                            injector.push(entry_record, |e, cols| { cols[0] = e.display_path.clone().into(); });
+                                            worker_files.fetch_add(1, Ordering::Relaxed);
+                                            if let Some(children) = pending.remove(&pend.record_number) {
+                                                resolve_queue.extend(children);
+                                            }
+                                        }
+                                        Err(missing_parent) => {
+                                            pending.entry(missing_parent).or_default().push(pend);
+                                        }
+                                    }
+                                }
+                                break; // first X30 only
                             }
                         }
+                    }
+                }
+
+                // Any remaining pending entries couldn't resolve (cycles or missing ancestors); inject best-effort partials
+                for (_missing, entries) in pending.into_iter() {
+                    for pend in entries {
+                        let partial_path = format!("{drive_letter}:\\{}", pend.filename); // minimal fallback
+                        let entry_record = FileEntry {
+                            filename: pend.filename,
+                            parent_ref: pend.parent_ref,
+                            display_path: partial_path,
+                            created: pend.created,
+                            modified: pend.modified,
+                            accessed: pend.accessed,
+                        };
+                        injector.push(entry_record, |e, cols| { cols[0] = e.display_path.clone().into(); });
+                        worker_files.fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
@@ -206,32 +289,29 @@ pub fn query_mft_files_fuzzy(drive_pattern: DriveLetterPattern, query: String, l
     Ok(())
 }
 
-fn reconstruct_full_path(
+fn try_build_full_path(
     filename: &str,
     parent_ref: Option<u64>,
     directories: &HashMap<u64, DirectoryEntry>,
     drive_letter: char,
-) -> String {
-    let mut path_components = vec![filename.to_string()];
-    let mut current_parent = parent_ref;
+) -> Result<String, u64> {
+    let mut components = vec![filename.to_string()];
+    let mut current = parent_ref;
     let mut guard = 0usize;
-    // Walk up the directory tree
-    while let Some(parent_id) = current_parent {
-        if guard > 1024 { break; } // safety guard against cycles
-        if let Some(parent_dir) = directories.get(&parent_id) {
-            // Skip root directory references
-            if parent_dir.name == "." || parent_id == 5 {
-                break;
-            }
-            path_components.push(parent_dir.name.clone());
-            current_parent = parent_dir.parent_reference;
-        } else {
+    while let Some(pid) = current {
+        if guard > 4096 { break; }
+        if pid == 5 { // root sentinel
             break;
+        }
+        if let Some(dir) = directories.get(&pid) {
+            if dir.name == "." { break; }
+            components.push(dir.name.clone());
+            current = dir.parent_reference;
+        } else {
+            return Err(pid); // missing ancestor
         }
         guard += 1;
     }
-
-    // Reverse to get correct order (root to file) and join with backslashes
-    path_components.reverse();
-    format!("{drive_letter}:\\{}", path_components.join("\\"))
+    components.reverse();
+    Ok(format!("{drive_letter}:\\{}", components.join("\\")))
 }
