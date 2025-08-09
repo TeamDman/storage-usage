@@ -5,6 +5,8 @@ use clap::Args;
 use eyre;
 use std::ffi::OsString;
 use std::path::PathBuf;
+// Added for parallel drive dumping
+use rayon::prelude::*;
 
 /// Arguments for dumping MFT from an NTFS drive
 #[derive(Args, Clone, PartialEq, Debug)]
@@ -57,38 +59,24 @@ impl MftDumpArgs {
         let drives = self.drive_letters.resolve()?;
 
         if drives.len() > 1 {
-            // Multiple drives - validate output path contains %s
-            let output_str = self.output_path.to_string_lossy();
+            let output_str = self.output_path.to_string_lossy().into_owned();
             if !output_str.contains("%s") {
                 return Err(eyre::eyre!(
                     "Output path must contain '%s' placeholder when multiple drives are specified. Found drives: {}",
                     drives.iter().collect::<String>()
                 ));
             }
-
-            // Process each drive
-            for drive in drives {
+            let overwrite_existing = self.overwrite_existing;
+            // Parallel processing of drives
+            drives.par_iter().try_for_each(|drive| {
                 let drive_output_path = output_str.replace("%s", &drive.to_string());
-                crate::mft_dump::dump_mft_to_file(
-                    &drive_output_path,
-                    self.overwrite_existing,
-                    drive,
-                )?;
-            }
+                crate::mft_dump::dump_mft_to_file(&drive_output_path, overwrite_existing, *drive)
+            })?;
         } else if drives.len() == 1 {
-            // Single drive
-            crate::mft_dump::dump_mft_to_file(
-                &self.output_path,
-                self.overwrite_existing,
-                drives[0],
-            )?;
+            crate::mft_dump::dump_mft_to_file(&self.output_path, self.overwrite_existing, drives[0])?;
         } else {
-            return Err(eyre::eyre!(
-                "No valid drives found for: {}",
-                self.drive_letters
-            ));
+            return Err(eyre::eyre!("No valid drives found for: {}", self.drive_letters));
         }
-
         Ok(())
     }
 }
@@ -98,9 +86,7 @@ impl ToArgs for MftDumpArgs {
         let mut args = Vec::new();
         args.push(self.drive_letters.to_string().into());
         args.push(self.output_path.as_os_str().into());
-        if self.overwrite_existing {
-            args.push("--overwrite-existing".into());
-        }
+        if self.overwrite_existing { args.push("--overwrite-existing".into()); }
         args
     }
 }

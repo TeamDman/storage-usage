@@ -6,6 +6,7 @@ use clap::Args;
 use color_eyre::eyre;
 use std::ffi::OsString;
 use std::fs;
+use rayon::prelude::*;
 
 /// Arguments for syncing MFT files into the cache directory
 #[derive(Args, Clone, PartialEq, Debug)]
@@ -15,7 +16,7 @@ pub struct MftSyncArgs {
     pub drive_pattern: DriveLetterPattern,
 
     /// Overwrite existing cached MFT files
-    #[clap(long)]
+    #[clap(long, default_value_t = true)]
     pub overwrite_existing: bool,
 }
 
@@ -39,10 +40,12 @@ impl MftSyncArgs {
         let drives = self.drive_pattern.resolve()?;
         let cache = get_cache_dir()?;
         fs::create_dir_all(&cache)?;
-        for d in drives {
+        let overwrite_existing = self.overwrite_existing; // capture for closure
+        // Run dumping in parallel across drives
+        drives.par_iter().try_for_each(|d| {
             let out = cache.join(format!("{d}.mft"));
-            crate::mft_dump::dump_mft_to_file(&out, self.overwrite_existing, d)?;
-        }
+            crate::mft_dump::dump_mft_to_file(&out, overwrite_existing, *d)
+        })?;
         Ok(())
     }
 }
