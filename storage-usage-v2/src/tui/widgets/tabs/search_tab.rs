@@ -187,6 +187,15 @@ impl SearchTab {
             let mut current_count = 0;
 
             'outer: for file_progress in mft_files {
+                // Infer drive letter from the MFT file name (e.g. "C.mft" -> 'C')
+                let drive_letter = file_progress
+                    .path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .and_then(|s| s.chars().next())
+                    .filter(|c| c.is_ascii_alphabetic())
+                    .map(|c| c.to_ascii_uppercase());
+
                 for file_path in &file_progress.files_within {
                     current_count += 1;
 
@@ -195,7 +204,16 @@ impl SearchTab {
                         continue;
                     }
 
-                    let full_path = file_path.to_string_lossy().to_string();
+                    let mut full_path = file_path.to_string_lossy().to_string();
+
+                    // If the worker produced a root-relative NT path ("\\dir\\file"), prefix with inferred drive letter
+                    // to match query full-pathization logic (e.g. "C:\\dir\\file"). We only do this when a drive letter
+                    // is available and the path currently starts with a single backslash.
+                    if let Some(dl) = drive_letter {
+                        if let Some(stripped) = full_path.strip_prefix('\\') {
+                            full_path = format!("{dl}:\\{stripped}");
+                        }
+                    }
 
                     let entry = FileEntry {
                         path: file_path.clone(),

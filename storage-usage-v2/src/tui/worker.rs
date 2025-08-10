@@ -1,5 +1,4 @@
 use crate::tui::mainbound_message::MainboundMessage;
-use mft::MftEntry;
 use mft::MftParser;
 use mft::attribute::MftAttributeContent;
 use ratatui::text::Line;
@@ -12,6 +11,10 @@ use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use uom::si::f64::Information;
 use uom::si::information::byte;
+
+// Promote DirectoryEntry so helper can see it
+#[derive(Clone)]
+struct DirectoryEntry { name: String, parent: Option<u64> }
 
 pub fn start_workers(
     mft_files: Vec<PathBuf>,
@@ -45,6 +48,15 @@ pub fn process_mft_file(
         file_size: Information::new::<byte>(file_size_bytes as f64),
     })?;
 
+    // Infer drive letter from file stem (e.g. C.mft -> 'C')
+    let drive_letter = mft_file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .and_then(|s| s.chars().next())
+        .filter(|c| c.is_ascii_alphabetic())
+        .map(|c| c.to_ascii_uppercase())
+        .unwrap_or('?');
+
     // Memory map the file
     let file = std::fs::File::open(&mft_file)
         .map_err(|e| eyre::eyre!("Failed to open file {}: {}", mft_file.display(), e))?;
@@ -56,7 +68,7 @@ pub fn process_mft_file(
     let mft_bytes = mmap.as_ref().to_vec();
     drop(mmap);
 
-    process_mft_bytes(index, mft_bytes, tx.clone())?;
+    process_mft_bytes(index, mft_bytes, drive_letter, tx.clone())?;
 
     tx.send(MainboundMessage::Complete { file_index: index })?;
     Ok(())
@@ -65,6 +77,7 @@ pub fn process_mft_file(
 pub fn process_mft_bytes(
     index: usize,
     mft_bytes: Vec<u8>,
+    drive_letter: char,
     tx: std::sync::mpsc::Sender<MainboundMessage>,
 ) -> eyre::Result<()> {
     let mut parser = MftParser::from_buffer(mft_bytes)
@@ -76,93 +89,116 @@ pub fn process_mft_bytes(
         entry_size,
     })?;
 
-    // Maintain directory map: record_number -> (name, parent_record_number)
-    let mut directories: HashMap<u64, (String, Option<u64>)> = HashMap::new();
+    #[derive(Clone)]
+    struct PendingEntry {
+        record_number: u64,
+        filename: String,
+        parent_ref: Option<u64>,
+    }
+
+    let mut directories: HashMap<u64, DirectoryEntry> = HashMap::new();
+    let mut pending: HashMap<u64, Vec<PendingEntry>> = HashMap::new();
+    let mut resolve_queue: Vec<PendingEntry> = Vec::new();
 
     for entry in parser.iter_entries() {
-        let messages = process_mft_entry(index, entry_size, entry, &mut directories);
-        for message in messages {
-            tx.send(message)
-                .map_err(|e| eyre::eyre!("Failed to send message: {}", e))?;
+        // progress & health first (assume healthy unless error below)
+        let mut healthy = true;
+        match &entry {
+            Ok(_) => tx.send(MainboundMessage::EntryStatus { file_index: index, is_healthy: true })?,
+            Err(_) => { healthy = false; tx.send(MainboundMessage::EntryStatus { file_index: index, is_healthy: false })?; }
         }
+
+        let (record_number, attributes) = match entry {
+            Ok(e) => (e.header.record_number, Some(e)),
+            Err(e) => {
+                tx.send(MainboundMessage::Error { file_index: index, error: Line::from(format!("Error processing entry: {e}")) })?;
+                tx.send(MainboundMessage::Progress { file_index: index, processed_size: entry_size })?;
+                continue;
+            }
+        };
+
+        let mut discovered: Vec<PathBuf> = Vec::new();
+
+        // Walk attributes, only use first filename (X30)
+        if let Some(entry_ok) = attributes {
+            for attribute in entry_ok.iter_attributes() {
+                let Ok(attribute) = attribute else { continue; };
+                if let MftAttributeContent::AttrX30(filename_attr) = &attribute.data {
+                    let filename = &filename_attr.name;
+                    if filename.is_empty() || filename.starts_with('$') || filename == "." || filename == ".." { continue; }
+                    let parent_ref = if filename_attr.parent.entry == 0 { None } else { Some(filename_attr.parent.entry) };
+                    // Insert directory (enables traversal); overwrite is fine (latest wins) but we could keep first
+                    directories.insert(record_number, DirectoryEntry { name: filename.clone(), parent: parent_ref });
+                    // Try immediate full path
+                    match try_build_full_path(filename, parent_ref, &directories, drive_letter) {
+                        Ok(full_path) => {
+                            discovered.push(PathBuf::from(full_path));
+                            // New directory may unblock children
+                            if let Some(children) = pending.remove(&record_number) { resolve_queue.extend(children); }
+                        }
+                        Err(missing_parent) => {
+                            pending.entry(missing_parent).or_default().push(PendingEntry { record_number, filename: filename.clone(), parent_ref });
+                        }
+                    }
+                    // Resolve queue breadth-first
+                    while let Some(pend) = resolve_queue.pop() {
+                        match try_build_full_path(&pend.filename, pend.parent_ref, &directories, drive_letter) {
+                            Ok(path) => {
+                                discovered.push(PathBuf::from(path));
+                                if let Some(children) = pending.remove(&pend.record_number) { resolve_queue.extend(children); }
+                            }
+                            Err(missing_parent) => {
+                                pending.entry(missing_parent).or_default().push(pend);
+                            }
+                        }
+                    }
+                    break; // only first X30
+                }
+            }
+        }
+
+        if !discovered.is_empty() {
+            tx.send(MainboundMessage::DiscoveredFiles { file_index: index, files: discovered })?;
+        }
+        // progress message
+        tx.send(MainboundMessage::Progress { file_index: index, processed_size: entry_size })?;
+        if !healthy { continue; }
     }
+
+    // Flush unresolved pending entries with minimal fallback path
+    for (_missing, entries) in pending.into_iter() {
+        let mut batch: Vec<PathBuf> = Vec::new();
+        for pend in entries {
+            let partial = if drive_letter != '?' { format!("{drive_letter}:\\{}", pend.filename) } else { pend.filename };
+            batch.push(PathBuf::from(partial));
+        }
+        if !batch.is_empty() { tx.send(MainboundMessage::DiscoveredFiles { file_index: index, files: batch })?; }
+    }
+
     Ok(())
 }
 
-fn reconstruct_full_path(record_number: u64, directories: &HashMap<u64, (String, Option<u64>)>) -> Option<String> {
-    let mut components = Vec::new();
-    let mut current = Some(record_number);
-    let mut depth = 0usize;
-    while let Some(id) = current {
-        if depth > 1024 { break; } // safety guard
-        if let Some((name, parent)) = directories.get(&id) {
-            if name == "." || id == 5 { // stop at root like original logic
-                break;
-            }
-            components.push(name.clone());
-            current = *parent;
+fn try_build_full_path(
+    filename: &str,
+    parent_ref: Option<u64>,
+    directories: &HashMap<u64, DirectoryEntry>,
+    drive_letter: char,
+) -> Result<String, u64> {
+    let mut components = vec![filename.to_string()];
+    let mut current = parent_ref;
+    let mut guard = 0usize;
+    while let Some(pid) = current {
+        if guard > 4096 { break; }
+        if pid == 5 { break; } // root sentinel
+        if let Some(dir) = directories.get(&pid) {
+            if dir.name == "." { break; }
+            components.push(dir.name.clone());
+            current = dir.parent;
         } else {
-            break;
+            return Err(pid);
         }
-        depth += 1;
+        guard += 1;
     }
-    if components.is_empty() { return None; }
     components.reverse();
-    Some(format!("\\{}", components.join("\\")))
-}
-
-pub fn process_mft_entry(
-    index: usize,
-    entry_size: Information,
-    entry: mft::err::Result<MftEntry>,
-    directories: &mut HashMap<u64, (String, Option<u64>)>,
-) -> Vec<MainboundMessage> {
-    let mut rtn = Vec::new();
-    match entry {
-        Ok(entry) => {
-            let record_number = entry.header.record_number;
-            // Track if we discovered at least one valid filename (avoid duplicates)
-            let mut discovered_paths: Vec<std::path::PathBuf> = Vec::new();
-            // Iterate attributes once, collect names + parent ref, also standard health status
-            for attribute in entry.iter_attributes() {
-                let Ok(attribute) = attribute else { continue; };
-                if let MftAttributeContent::AttrX30(filename_attribute) = &attribute.data {
-                    let filename = &filename_attribute.name;
-                    if filename.is_empty()
-                        || filename.starts_with('$')
-                        || filename == "."
-                        || filename == ".."
-                        || filename.len() <= 2
-                    {
-                        continue;
-                    }
-                    let parent_ref = if filename_attribute.parent.entry == 0 {
-                        None
-                    } else {
-                        Some(filename_attribute.parent.entry)
-                    };
-                    // Insert if not already present to preserve first seen (preferred) name
-                    directories.entry(record_number).or_insert((filename.clone(), parent_ref));
-                    if let Some(full_path) = reconstruct_full_path(record_number, directories) {
-                        discovered_paths.push(std::path::PathBuf::from(full_path));
-                    }
-                }
-            }
-            // Always push entry status (healthy)
-            rtn.push(MainboundMessage::EntryStatus { file_index: index, is_healthy: true });
-            // Emit discovered files (may be empty)
-            if !discovered_paths.is_empty() {
-                rtn.push(MainboundMessage::DiscoveredFiles { file_index: index, files: discovered_paths });
-            }
-            // Progress message
-            rtn.push(MainboundMessage::Progress { file_index: index, processed_size: entry_size });
-        }
-        Err(e) => {
-            rtn.push(MainboundMessage::EntryStatus { file_index: index, is_healthy: false });
-            rtn.push(MainboundMessage::Progress { file_index: index, processed_size: entry_size });
-            rtn.push(MainboundMessage::Error { file_index: index, error: Line::from(format!("Error processing entry: {e}")) });
-            return rtn;
-        }
-    }
-    rtn
+    if drive_letter == '?' { Ok(format!("\\{}", components.join("\\"))) } else { Ok(format!("{drive_letter}:\\{}", components.join("\\"))) }
 }
