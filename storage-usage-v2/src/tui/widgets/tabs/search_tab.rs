@@ -16,13 +16,20 @@ use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Instant;
+use rustc_hash::FxHashSet;
 
 #[derive(Clone)]
 struct FileEntry {
     path: PathBuf,
     full_path: String,
+}
+
+enum WorkerMessage {
+    Batch(Vec<FileEntry>),
+    Done,
 }
 
 pub struct SearchTab {
@@ -33,6 +40,10 @@ pub struct SearchTab {
     last_file_count: usize,
     last_update: Instant,
     visible_height: usize,
+    worker_tx: Sender<Vec<PathBuf>>, // send newly discovered raw paths per MFT file batch
+    worker_rx: Receiver<WorkerMessage>,
+    pending_batch: Vec<FileEntry>,
+    seen: FxHashSet<String>,
 }
 
 impl Default for SearchTab {
@@ -46,10 +57,33 @@ impl SearchTab {
         let config = nucleo::Config::DEFAULT;
         let matcher = Nucleo::new(
             config,
-            Arc::new(|| {}), // notify callback - we'll handle updates in render
-            None,            // use default number of threads
-            1,               // single column for matching
+            Arc::new(|| {}),
+            None,
+            1,
         );
+
+        let (tx_paths, rx_paths) = mpsc::channel::<Vec<PathBuf>>();
+        let (tx_worker, rx_worker) = mpsc::channel::<WorkerMessage>();
+
+        // Spawn background thread for heavy path processing & duplication filtering
+        std::thread::spawn(move || {
+            let mut local_seen: FxHashSet<String> = FxHashSet::default();
+            while let Ok(batch) = rx_paths.recv() {
+                if batch.is_empty() { continue; }
+                let mut out = Vec::with_capacity(batch.len());
+                for pb in batch {
+                    let mut s = pb.to_string_lossy().to_string();
+                    // If root-relative path, leave as-is (already prefixed by workers earlier).
+                    if local_seen.insert(s.clone()) {
+                        out.push(FileEntry { path: PathBuf::from(&s), full_path: s.clone() });
+                    }
+                }
+                if !out.is_empty() {
+                    let _ = tx_worker.send(WorkerMessage::Batch(out));
+                }
+            }
+            let _ = tx_worker.send(WorkerMessage::Done);
+        });
 
         Self {
             search_query: String::new(),
@@ -58,7 +92,11 @@ impl SearchTab {
             matcher,
             last_file_count: 0,
             last_update: Instant::now(),
-            visible_height: 20, // default, will be updated in render
+            visible_height: 20,
+            worker_tx: tx_paths,
+            worker_rx: rx_worker,
+            pending_batch: Vec::new(),
+            seen: FxHashSet::default(),
         }
     }
 
@@ -172,74 +210,32 @@ impl SearchTab {
     }
 
     fn update_file_entries(&mut self, mft_files: &[MftFileProgress]) {
-        // Count total files to see if we need to update
-        let total_files: usize = mft_files.iter().map(|mft| mft.files_within.len()).sum();
-
-        // Only update if file count changed or it's been a while since last update
-        let should_update =
-            total_files != self.last_file_count || self.last_update.elapsed().as_millis() > 500; // Update every 500ms max
-
-        if should_update && total_files > self.last_file_count {
-            let injector = self.matcher.injector();
-
-            // Add only new files since last update
-            let mut files_added = 0;
-            let mut current_count = 0;
-
-            'outer: for file_progress in mft_files {
-                // Infer drive letter from the MFT file name (e.g. "C.mft" -> 'C')
-                let drive_letter = file_progress
-                    .path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .and_then(|s| s.chars().next())
-                    .filter(|c| c.is_ascii_alphabetic())
-                    .map(|c| c.to_ascii_uppercase());
-
-                for file_path in &file_progress.files_within {
-                    current_count += 1;
-
-                    // Skip files we've already added
-                    if current_count <= self.last_file_count {
-                        continue;
-                    }
-
-                    let mut full_path = file_path.to_string_lossy().to_string();
-
-                    // If the worker produced a root-relative NT path ("\\dir\\file"), prefix with inferred drive letter
-                    // to match query full-pathization logic (e.g. "C:\\dir\\file"). We only do this when a drive letter
-                    // is available and the path currently starts with a single backslash.
-                    if let Some(dl) = drive_letter {
-                        if let Some(stripped) = full_path.strip_prefix('\\') {
-                            full_path = format!("{dl}:\\{stripped}");
+        // Drain background worker messages first
+        while let Ok(msg) = self.worker_rx.try_recv() {
+            match msg {
+                WorkerMessage::Batch(entries) => {
+                    let injector = self.matcher.injector();
+                    for e in entries {
+                        if self.seen.insert(e.full_path.clone()) {
+                            injector.push(e.clone(), |entry, columns| {
+                                columns[0] = entry.full_path.clone().into();
+                            });
+                            self.last_file_count += 1;
                         }
                     }
-
-                    let entry = FileEntry {
-                        path: file_path.clone(),
-                        full_path: full_path.clone(),
-                    };
-
-                    injector.push(entry, |entry, columns| {
-                        // Use full path as searchable text to differentiate duplicates
-                        columns[0] = entry.full_path.clone().into();
-                    });
-
-                    files_added += 1;
-
-                    // Batch limit to avoid blocking UI too long
-                    if files_added >= 10000 {
-                        break 'outer;
-                    }
                 }
+                WorkerMessage::Done => { /* thread finished */ }
             }
-
-            self.last_file_count = current_count;
-            self.last_update = Instant::now();
         }
-
-        // Tick the matcher to process any pending work
-        self.matcher.tick(10); // 10ms timeout
+        // Count new raw files; send in chunks to worker
+        for file_progress in mft_files {
+            if file_progress.files_within.len() > self.last_file_count {
+                // send only new slice; simplistic global counter vs per-file; for precision we'd track per-file
+                let new_paths: Vec<PathBuf> = file_progress.files_within[self.last_file_count.min(file_progress.files_within.len())..].to_vec();
+                if !new_paths.is_empty() { let _ = self.worker_tx.send(new_paths); }
+            }
+        }
+        self.matcher.tick(5);
     }
 
     fn render_search_results(&mut self, area: Rect, buf: &mut Buffer) {
